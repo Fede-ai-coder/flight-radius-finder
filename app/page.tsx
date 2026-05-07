@@ -5,29 +5,11 @@ import { useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { buildMockFlights } from "@/lib/flights";
 import { airportsWithinRadius } from "@/lib/geo";
+import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
 
 const RADIUS_OPTIONS = [50, 100, 200, 300];
-const SUPPORTED_CITIES: Array<{ label: string; coords: [number, number] }> = [
-  { label: "Rome", coords: [41.9028, 12.4964] },
-  { label: "Milan", coords: [45.4642, 9.19] },
-  { label: "Naples", coords: [40.8518, 14.2681] },
-  { label: "Venice", coords: [45.4408, 12.3155] },
-  { label: "Bologna", coords: [44.4949, 11.3426] },
-  { label: "Florence", coords: [43.7696, 11.2558] },
-  { label: "Turin", coords: [45.0703, 7.6869] },
-  { label: "Bari", coords: [41.1171, 16.8719] },
-  { label: "Palermo", coords: [38.1157, 13.3615] },
-  { label: "Catania", coords: [37.5079, 15.083] },
-  { label: "Paris", coords: [48.8566, 2.3522] },
-  { label: "London", coords: [51.5072, -0.1276] },
-  { label: "New York", coords: [40.7128, -74.006] },
-];
-
-const CITY_COORDS: Record<string, [number, number]> = Object.fromEntries(
-  SUPPORTED_CITIES.map((city) => [city.label.toLowerCase(), city.coords]),
-);
 
 export default function HomePage() {
   const [selectedPoint, setSelectedPoint] = useState<[number, number]>([40.7128, -74.006]);
@@ -35,6 +17,11 @@ export default function HomePage() {
   const [radiusKm, setRadiusKm] = useState(100);
   const [destination, setDestination] = useState("LAX");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+
+  const departureSuggestions = useMemo(
+    () => DEPARTURE_OPTIONS.map((option) => option.label),
+    [],
+  );
 
   const nearbyAirports = useMemo(
     () => airportsWithinRadius(AIRPORTS, selectedPoint[0], selectedPoint[1], radiusKm),
@@ -56,20 +43,20 @@ export default function HomePage() {
           <div className="mb-3">
             <label className="mb-2 block text-sm font-medium">Departure area or city</label>
             <input
-              list="departure-cities"
+              list="departure-options"
               value={departureQuery}
               onChange={(e) => {
                 const query = e.target.value;
                 setDepartureQuery(query);
-                const coords = CITY_COORDS[query.trim().toLowerCase()];
-                if (coords) setSelectedPoint(coords);
+                const departureLocation = findDepartureLocation(query);
+                if (departureLocation) setSelectedPoint(departureLocation.coords);
               }}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Departure area or city (e.g. Rome, Milan, Naples)"
+              placeholder="Departure area or city (e.g. Roma, Milano, FCO)"
             />
-            <datalist id="departure-cities">
-              {SUPPORTED_CITIES.map((city) => (
-                <option key={city.label} value={city.label} />
+            <datalist id="departure-options">
+              {departureSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
               ))}
             </datalist>
           </div>
