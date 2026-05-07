@@ -1,6 +1,7 @@
 "use client";
 
-import { Circle, MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
+import { useEffect } from "react";
+import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
 type MapPickerProps = {
@@ -27,6 +28,16 @@ function ClickHandler({ onSelect }: { onSelect: (next: [number, number]) => void
   return null;
 }
 
+function MapCenterUpdater({ center }: { center: [number, number] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, map.getZoom(), { animate: true });
+  }, [center, map]);
+
+  return null;
+}
+
 export default function MapPicker({ center, radiusKm, onSelect }: MapPickerProps) {
   return (
     <MapContainer center={center} zoom={6} className="h-full w-full rounded-xl">
@@ -34,6 +45,7 @@ export default function MapPicker({ center, radiusKm, onSelect }: MapPickerProps
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      <MapCenterUpdater center={center} />
       <ClickHandler onSelect={onSelect} />
       <Marker position={center} icon={markerIcon} />
       <Circle center={center} radius={radiusKm * 1000} pathOptions={{ color: "#2563eb", fillOpacity: 0.15 }} />
