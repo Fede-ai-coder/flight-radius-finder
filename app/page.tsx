@@ -9,21 +9,25 @@ import { airportsWithinRadius } from "@/lib/geo";
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
 
 const RADIUS_OPTIONS = [50, 100, 200, 300];
-const CITY_COORDS: Record<string, [number, number]> = {
-  rome: [41.9028, 12.4964],
-  milan: [45.4642, 9.19],
-  naples: [40.8518, 14.2681],
-  venice: [45.4408, 12.3155],
-  bologna: [44.4949, 11.3426],
-  florence: [43.7696, 11.2558],
-  turin: [45.0703, 7.6869],
-  bari: [41.1171, 16.8719],
-  palermo: [38.1157, 13.3615],
-  catania: [37.5079, 15.083],
-  paris: [48.8566, 2.3522],
-  london: [51.5072, -0.1276],
-  "new york": [40.7128, -74.006],
-};
+const SUPPORTED_CITIES: Array<{ label: string; coords: [number, number] }> = [
+  { label: "Rome", coords: [41.9028, 12.4964] },
+  { label: "Milan", coords: [45.4642, 9.19] },
+  { label: "Naples", coords: [40.8518, 14.2681] },
+  { label: "Venice", coords: [45.4408, 12.3155] },
+  { label: "Bologna", coords: [44.4949, 11.3426] },
+  { label: "Florence", coords: [43.7696, 11.2558] },
+  { label: "Turin", coords: [45.0703, 7.6869] },
+  { label: "Bari", coords: [41.1171, 16.8719] },
+  { label: "Palermo", coords: [38.1157, 13.3615] },
+  { label: "Catania", coords: [37.5079, 15.083] },
+  { label: "Paris", coords: [48.8566, 2.3522] },
+  { label: "London", coords: [51.5072, -0.1276] },
+  { label: "New York", coords: [40.7128, -74.006] },
+];
+
+const CITY_COORDS: Record<string, [number, number]> = Object.fromEntries(
+  SUPPORTED_CITIES.map((city) => [city.label.toLowerCase(), city.coords]),
+);
 
 export default function HomePage() {
   const [selectedPoint, setSelectedPoint] = useState<[number, number]>([40.7128, -74.006]);
@@ -64,8 +68,8 @@ export default function HomePage() {
               placeholder="Departure area or city (e.g. Rome, Milan, Naples)"
             />
             <datalist id="departure-cities">
-              {Object.keys(CITY_COORDS).map((city) => (
-                <option key={city} value={city.replace(/\b\w/g, (char) => char.toUpperCase())} />
+              {SUPPORTED_CITIES.map((city) => (
+                <option key={city.label} value={city.label} />
               ))}
             </datalist>
           </div>
