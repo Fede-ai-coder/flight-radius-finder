@@ -9,9 +9,29 @@ import { airportsWithinRadius } from "@/lib/geo";
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
 
 const RADIUS_OPTIONS = [50, 100, 200, 300];
+const SUPPORTED_CITIES: Array<{ label: string; coords: [number, number] }> = [
+  { label: "Rome", coords: [41.9028, 12.4964] },
+  { label: "Milan", coords: [45.4642, 9.19] },
+  { label: "Naples", coords: [40.8518, 14.2681] },
+  { label: "Venice", coords: [45.4408, 12.3155] },
+  { label: "Bologna", coords: [44.4949, 11.3426] },
+  { label: "Florence", coords: [43.7696, 11.2558] },
+  { label: "Turin", coords: [45.0703, 7.6869] },
+  { label: "Bari", coords: [41.1171, 16.8719] },
+  { label: "Palermo", coords: [38.1157, 13.3615] },
+  { label: "Catania", coords: [37.5079, 15.083] },
+  { label: "Paris", coords: [48.8566, 2.3522] },
+  { label: "London", coords: [51.5072, -0.1276] },
+  { label: "New York", coords: [40.7128, -74.006] },
+];
+
+const CITY_COORDS: Record<string, [number, number]> = Object.fromEntries(
+  SUPPORTED_CITIES.map((city) => [city.label.toLowerCase(), city.coords]),
+);
 
 export default function HomePage() {
   const [selectedPoint, setSelectedPoint] = useState<[number, number]>([40.7128, -74.006]);
+  const [departureQuery, setDepartureQuery] = useState("New York");
   const [radiusKm, setRadiusKm] = useState(100);
   const [destination, setDestination] = useState("LAX");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -33,6 +53,26 @@ export default function HomePage() {
 
       <section className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="rounded-2xl bg-white p-4 shadow lg:col-span-2">
+          <div className="mb-3">
+            <label className="mb-2 block text-sm font-medium">Departure area or city</label>
+            <input
+              list="departure-cities"
+              value={departureQuery}
+              onChange={(e) => {
+                const query = e.target.value;
+                setDepartureQuery(query);
+                const coords = CITY_COORDS[query.trim().toLowerCase()];
+                if (coords) setSelectedPoint(coords);
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Departure area or city (e.g. Rome, Milan, Naples)"
+            />
+            <datalist id="departure-cities">
+              {SUPPORTED_CITIES.map((city) => (
+                <option key={city.label} value={city.label} />
+              ))}
+            </datalist>
+          </div>
           <div className="h-[420px] overflow-hidden rounded-xl">
             <MapPicker center={selectedPoint} radiusKm={radiusKm} onSelect={setSelectedPoint} />
           </div>
@@ -95,8 +135,11 @@ export default function HomePage() {
       </section>
 
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
-        <h2 className="text-xl font-semibold">Mock flight results</h2>
+        <h2 className="text-xl font-semibold">Demo flight results</h2>
         <p className="mb-4 text-sm text-slate-500">These are generated sample flights (no real API calls).</p>
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Demo mode: prices and flights are simulated. Real flight API not connected yet.
+        </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
