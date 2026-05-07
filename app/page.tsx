@@ -1,11 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
-import { buildMockFlights } from "@/lib/flights";
 import { airportsWithinRadius } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
+import type { FlightResult } from "@/lib/flightProviders/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
 
@@ -17,6 +17,9 @@ export default function HomePage() {
   const [radiusKm, setRadiusKm] = useState(100);
   const [destination, setDestination] = useState("LAX");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [flights, setFlights] = useState<FlightResult[]>([]);
+  const [isLoadingFlights, setIsLoadingFlights] = useState(false);
+  const [flightError, setFlightError] = useState<string | null>(null);
 
   const departureSuggestions = useMemo(
     () => DEPARTURE_OPTIONS.map((option) => option.label),
@@ -28,9 +31,52 @@ export default function HomePage() {
     [selectedPoint, radiusKm],
   );
 
-  const flights = useMemo(() => {
-    if (!destination.trim() || !date) return [];
-    return buildMockFlights(nearbyAirports, destination.trim(), date);
+  useEffect(() => {
+    const origins = nearbyAirports.map((airport) => airport.code);
+
+    if (!destination.trim() || !date || origins.length === 0) {
+      setFlights([]);
+      return;
+    }
+
+    let isActive = true;
+
+    async function loadFlights() {
+      setIsLoadingFlights(true);
+      setFlightError(null);
+
+      try {
+        const response = await fetch("/api/flights/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origins,
+            destination: destination.trim(),
+            date,
+            adults: 1,
+            maxResults: 3,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Flight search failed");
+
+        const data = (await response.json()) as { flights?: FlightResult[] };
+        if (isActive) setFlights(data.flights ?? []);
+      } catch (error) {
+        if (isActive) {
+          setFlights([]);
+          setFlightError(error instanceof Error ? error.message : "Flight search failed");
+        }
+      } finally {
+        if (isActive) setIsLoadingFlights(false);
+      }
+    }
+
+    loadFlights();
+
+    return () => {
+      isActive = false;
+    };
   }, [nearbyAirports, destination, date]);
 
   return (
@@ -122,11 +168,17 @@ export default function HomePage() {
       </section>
 
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
-        <h2 className="text-xl font-semibold">Demo flight results</h2>
-        <p className="mb-4 text-sm text-slate-500">These are generated sample flights (no real API calls).</p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-semibold">Demo flight results</h2>
+            <p className="mb-4 text-sm text-slate-500">These are generated sample flights (no real API calls).</p>
+          </div>
+          {isLoadingFlights && <p className="text-sm text-slate-500">Loading demo results...</p>}
+        </div>
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Demo mode: prices and flights are simulated. Real flight API not connected yet.
         </div>
+        {flightError && <p className="mb-4 text-sm text-red-600">{flightError}</p>}
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -136,7 +188,10 @@ export default function HomePage() {
                 <th className="p-2">To</th>
                 <th className="p-2">Date</th>
                 <th className="p-2">Airline</th>
+                <th className="p-2">Departure</th>
+                <th className="p-2">Arrival</th>
                 <th className="p-2">Duration</th>
+                <th className="p-2">Stops</th>
                 <th className="p-2">Price</th>
               </tr>
             </thead>
@@ -147,13 +202,16 @@ export default function HomePage() {
                   <td className="p-2">{flight.to}</td>
                   <td className="p-2">{flight.date}</td>
                   <td className="p-2">{flight.airline}</td>
-                  <td className="p-2">{flight.durationHours}h</td>
-                  <td className="p-2">${flight.priceUsd}</td>
+                  <td className="p-2">{flight.departureTime}</td>
+                  <td className="p-2">{flight.arrivalTime}</td>
+                  <td className="p-2">{flight.duration}</td>
+                  <td className="p-2">{flight.stops}</td>
+                  <td className="p-2">{flight.currency} {flight.price}</td>
                 </tr>
               ))}
               {flights.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-3 text-slate-500">
+                  <td colSpan={9} className="p-3 text-slate-500">
                     Enter destination/date and select an area with nearby airports.
                   </td>
                 </tr>
