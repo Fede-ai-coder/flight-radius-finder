@@ -11,6 +11,18 @@ const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false }
 
 const RADIUS_OPTIONS = [50, 100, 200, 300];
 
+type FlightSearchResponse = {
+  flights?: FlightResult[];
+  source?: string;
+};
+
+function getSourceLabel(source: string | null) {
+  if (source === "duffel") return "Duffel test API";
+  if (source === "mock-fallback") return "Mock fallback";
+  if (source === "mock") return "Mock demo data";
+  return "Not loaded yet";
+}
+
 export default function HomePage() {
   const [selectedPoint, setSelectedPoint] = useState<[number, number]>([40.7128, -74.006]);
   const [departureQuery, setDepartureQuery] = useState("New York");
@@ -18,6 +30,7 @@ export default function HomePage() {
   const [destination, setDestination] = useState("LAX");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [flights, setFlights] = useState<FlightResult[]>([]);
+  const [flightSource, setFlightSource] = useState<string | null>(null);
   const [isLoadingFlights, setIsLoadingFlights] = useState(false);
   const [flightError, setFlightError] = useState<string | null>(null);
 
@@ -36,6 +49,7 @@ export default function HomePage() {
 
     if (!destination.trim() || !date || origins.length === 0) {
       setFlights([]);
+      setFlightSource(null);
       return;
     }
 
@@ -60,11 +74,15 @@ export default function HomePage() {
 
         if (!response.ok) throw new Error("Flight search failed");
 
-        const data = (await response.json()) as { flights?: FlightResult[] };
-        if (isActive) setFlights(data.flights ?? []);
+        const data = (await response.json()) as FlightSearchResponse;
+        if (isActive) {
+          setFlights(data.flights ?? []);
+          setFlightSource(data.source ?? null);
+        }
       } catch (error) {
         if (isActive) {
           setFlights([]);
+          setFlightSource(null);
           setFlightError(error instanceof Error ? error.message : "Flight search failed");
         }
       } finally {
@@ -82,7 +100,7 @@ export default function HomePage() {
   return (
     <main className="mx-auto min-h-screen max-w-6xl p-4 md:p-8">
       <h1 className="text-3xl font-bold text-slate-900">Flight Radius Finder</h1>
-      <p className="mt-2 text-slate-600">Pick a location on the map and discover mock flights from nearby airports.</p>
+      <p className="mt-2 text-slate-600">Pick a location on the map and discover flights from nearby airports.</p>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="rounded-2xl bg-white p-4 shadow lg:col-span-2">
@@ -170,13 +188,16 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <h2 className="text-xl font-semibold">Demo flight results</h2>
-            <p className="mb-4 text-sm text-slate-500">These are generated sample flights (no real API calls).</p>
+            <h2 className="text-xl font-semibold">Flight results</h2>
+            <p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider.</p>
           </div>
-          {isLoadingFlights && <p className="text-sm text-slate-500">Loading demo results...</p>}
+          <div className="text-right text-sm text-slate-500">
+            <p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>
+            {isLoadingFlights && <p>Loading results...</p>}
+          </div>
         </div>
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Demo mode: prices and flights are simulated. Real flight API not connected yet.
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.
         </div>
         {flightError && <p className="mb-4 text-sm text-red-600">{flightError}</p>}
 
