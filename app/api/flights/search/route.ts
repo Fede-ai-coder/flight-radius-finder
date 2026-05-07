@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { duffelFlightProvider } from "@/lib/flightProviders/duffelProvider";
 import { mockFlightProvider } from "@/lib/flightProviders/mockProvider";
+import type { FlightProvider } from "@/lib/flightProviders/types";
 
 const DEFAULT_ADULTS = 1;
 const DEFAULT_MAX_RESULTS = 5;
@@ -19,6 +21,14 @@ function normalizeStringArray(value: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim().toUpperCase())
     .filter(Boolean);
+}
+
+function getConfiguredProvider(): FlightProvider {
+  if (process.env.FLIGHT_PROVIDER === "duffel" && process.env.DUFFEL_ACCESS_TOKEN) {
+    return duffelFlightProvider;
+  }
+
+  return mockFlightProvider;
 }
 
 export async function POST(request: Request) {
@@ -44,9 +54,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const results = await Promise.all(
+  const provider = getConfiguredProvider();
+
+  const results = await Promise.allSettled(
     origins.map((origin) =>
-      mockFlightProvider.searchFlights({
+      provider.searchFlights({
         origin,
         destination,
         date,
@@ -58,9 +70,35 @@ export async function POST(request: Request) {
   );
 
   const flights = results
-    .flat()
+    .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
     .sort((a, b) => a.price - b.price)
     .slice(0, maxResults * origins.length);
 
-  return NextResponse.json({ flights });
+  if (flights.length === 0 && provider !== mockFlightProvider) {
+    const fallbackResults = await Promise.all(
+      origins.map((origin) =>
+        mockFlightProvider.searchFlights({
+          origin,
+          destination,
+          date,
+          adults,
+          maxResults,
+          nonStop,
+        }),
+      ),
+    );
+
+    return NextResponse.json({
+      flights: fallbackResults
+        .flat()
+        .sort((a, b) => a.price - b.price)
+        .slice(0, maxResults * origins.length),
+      source: "mock-fallback",
+    });
+  }
+
+  return NextResponse.json({
+    flights,
+    source: provider === duffelFlightProvider ? "duffel" : "mock",
+  });
 }

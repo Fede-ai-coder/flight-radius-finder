@@ -46,23 +46,35 @@ npm run start
 
 No API keys are required for the current demo mode.
 
-## Future real API integration
+## Flight provider configuration
 
-The app now uses a flight-provider architecture so the UI can keep calling the internal API route while the backend provider changes later.
-
-Current flow:
+The app uses an internal API route so provider credentials stay server-side:
 
 ```text
-Frontend → /api/flights/search → mockFlightProvider → normalized FlightResult[]
+Frontend → /api/flights/search → configured provider → normalized FlightResult[]
 ```
 
-Future Amadeus flow:
+Supported provider modes:
+
+- `FLIGHT_PROVIDER=mock` or unset: uses the mock provider.
+- `FLIGHT_PROVIDER=duffel`: uses Duffel when `DUFFEL_ACCESS_TOKEN` exists, with mock fallback when no real results are returned.
+
+For Duffel test mode, add these as Vercel Environment Variables:
+
+- `DUFFEL_ACCESS_TOKEN`
+- `FLIGHT_PROVIDER=duffel`
+
+Do not expose Duffel tokens in frontend code and do not commit them to GitHub.
+
+## Future real API integration
+
+The same provider architecture can also support Amadeus later:
 
 ```text
 Frontend → /api/flights/search → amadeusFlightProvider → Amadeus Flight Offers Search → normalized FlightResult[]
 ```
 
-When the real Amadeus integration is implemented, add these credentials as Vercel Environment Variables, not in frontend code and not in GitHub:
+When the Amadeus integration is implemented, add these credentials as Vercel Environment Variables, not in frontend code and not in GitHub:
 
 - `AMADEUS_CLIENT_ID`
 - `AMADEUS_CLIENT_SECRET`
