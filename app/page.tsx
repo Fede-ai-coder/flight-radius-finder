@@ -69,9 +69,27 @@ export default function HomePage() {
   const destinationLabel = arrivalSearchMode === "polygon" ? (destinationCodes.length ? destinationCodes.join(" / ") : "drawn arrival area") : destinationResolution.label;
   const visibleFlights = useMemo(() => selectedOriginFilter === "all" ? flights : flights.filter((flight) => flight.fromCode === selectedOriginFilter), [flights, selectedOriginFilter]);
   const originAirportByCode = useMemo(() => new Map(nearbyAirports.map((airport) => [airport.code, airport])), [nearbyAirports]);
+  const airportByCode = useMemo(() => new Map(AIRPORTS.map((airport) => [airport.code, airport])), []);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
   const highlightedAirports = useMemo(() => originSummaries.filter((summary) => summary.status === "found").map((summary) => { const airport = originAirportByCode.get(summary.origin); return airport ? { ...airport, resultCount: summary.resultCount, cheapestPrice: summary.cheapestPrice, currency: summary.currency } : null; }).filter((airport): airport is NonNullable<typeof airport> => Boolean(airport)), [originSummaries, originAirportByCode]);
+  const highlightedArrivalAirports = useMemo(() => {
+    const summaryByArrival = new Map<string, { resultCount: number; cheapestPrice: number | null; currency: string | null }>();
+    for (const flight of flights) {
+      const current = summaryByArrival.get(flight.to);
+      if (!current) {
+        summaryByArrival.set(flight.to, { resultCount: 1, cheapestPrice: flight.price, currency: flight.currency });
+        continue;
+      }
+      current.resultCount += 1;
+      if (current.cheapestPrice === null || flight.price < current.cheapestPrice) current.cheapestPrice = flight.price;
+      current.currency = current.currency ?? flight.currency;
+    }
+    return Array.from(summaryByArrival.entries()).map(([code, summary]) => {
+      const airport = airportByCode.get(code);
+      return airport ? { ...airport, ...summary } : null;
+    }).filter((airport): airport is NonNullable<typeof airport> => Boolean(airport));
+  }, [flights, airportByCode]);
   const alternateArrivalCount = visibleFlights.filter((flight) => destinationCodes.length > 0 && !destinationCodes.includes(flight.to)).length;
   const departureAreaLabel = departureSearchMode === "polygon" ? `drawn area (${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"})` : `${radiusKm} km`;
   const arrivalAreaLabel = arrivalSearchMode === "polygon" ? `drawn area (${arrivalPolygon.length} point${arrivalPolygon.length === 1 ? "" : "s"})` : `${getArrivalRadiusLabel(arrivalRadiusKm)} arrival`;
@@ -155,11 +173,12 @@ export default function HomePage() {
             {activeMapMode === "polygon" && <button type="button" onClick={() => updateActivePolygon((current) => current.slice(0, -1))} disabled={activePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Undo point</button>}
             {activeMapMode === "polygon" && <button type="button" onClick={() => updateActivePolygon(() => [])} disabled={activePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Clear area</button>}
           </div>
-          <div className="mb-3 flex flex-wrap gap-3 text-xs font-medium text-slate-600"><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" /> departure area</span><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-pink-600" /> arrival area</span></div>
+          <div className="mb-3 flex flex-wrap gap-3 text-xs font-medium text-slate-600"><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" /> departure area</span><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-pink-600" /> arrival area</span><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-green-600" /> result departures</span><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-500" /> result arrivals</span></div>
           {activeMapMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Editing {mapEditArea} area: click on the map to add at least 3 points. Drag colored points to reshape the active area, or drag the light-blue line handles to pull out a new edge.</p>}
-          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={activeMapMode} polygonPoints={activePolygon} secondaryPolygons={secondaryPolygons} activePolygonColor={activePolygonColor} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} onInsertPolygonPoint={handleInsertPolygonPoint} /></div>
+          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={activeMapMode} polygonPoints={activePolygon} secondaryPolygons={secondaryPolygons} activePolygonColor={activePolygonColor} highlightedAirports={highlightedAirports} highlightedArrivalAirports={highlightedArrivalAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} onInsertPolygonPoint={handleInsertPolygonPoint} /></div>
           <p className="mt-3 text-sm text-slate-600">Departure: {departureAreaLabel} · Arrival: {arrivalSearchMode === "polygon" ? `${arrivalPolygonAirports.length} airports in ${arrivalAreaLabel}` : arrivalAreaLabel}</p>
-          {highlightedAirports.length > 0 && <p className="mt-1 text-sm font-medium text-green-700">Highlighted result airports: {highlightedAirports.map((airport) => airport.code).join(", ")}</p>}
+          {highlightedAirports.length > 0 && <p className="mt-1 text-sm font-medium text-green-700">Highlighted departure airports: {highlightedAirports.map((airport) => airport.code).join(", ")}</p>}
+          {highlightedArrivalAirports.length > 0 && <p className="mt-1 text-sm font-medium text-orange-600">Highlighted arrival airports: {highlightedArrivalAirports.map((airport) => airport.code).join(", ")}</p>}
         </div>
 
         <div className="space-y-4 rounded-2xl bg-white p-4 shadow">
