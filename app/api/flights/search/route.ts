@@ -9,6 +9,7 @@ const DEFAULT_MAX_RESULTS = 5;
 type FlightSearchBody = {
   origins?: unknown;
   destination?: unknown;
+  destinations?: unknown;
   date?: unknown;
   adults?: unknown;
   maxResults?: unknown;
@@ -31,6 +32,15 @@ function normalizeStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function getDestinationCodes(body: FlightSearchBody): string[] {
+  const destinationList = normalizeStringArray(body.destinations);
+  if (destinationList.length > 0) return destinationList;
+
+  return typeof body.destination === "string" && body.destination.trim()
+    ? [body.destination.trim().toUpperCase()]
+    : [];
+}
+
 function getConfiguredProvider(): FlightProvider {
   if (process.env.FLIGHT_PROVIDER === "duffel" && process.env.DUFFEL_ACCESS_TOKEN) return duffelFlightProvider;
   return mockFlightProvider;
@@ -50,26 +60,30 @@ function buildOriginSummaries(origins: string[], resultsByOrigin: Record<string,
   });
 }
 
-async function searchOrigins(provider: FlightProvider, origins: string[], destination: string, date: string, adults: number, maxResults: number, nonStop?: boolean) {
+async function searchOrigins(provider: FlightProvider, origins: string[], destinations: string[], date: string, adults: number, maxResults: number, nonStop?: boolean) {
+  const searchPairs = origins.flatMap((origin) => destinations.map((destination) => ({ origin, destination })));
   const settled = await Promise.allSettled(
-    origins.map(async (origin) => ({
+    searchPairs.map(async ({ origin, destination }) => ({
       origin,
       flights: await provider.searchFlights({ origin, destination, date, adults, maxResults, nonStop }),
     })),
   );
 
-  const resultsByOrigin: Record<string, FlightResult[]> = {};
+  const resultsByOrigin: Record<string, FlightResult[]> = Object.fromEntries(origins.map((origin) => [origin, []]));
   const errors = new Set<string>();
 
   settled.forEach((result, index) => {
-    const origin = origins[index];
+    const { origin } = searchPairs[index];
     if (result.status === "fulfilled") {
-      resultsByOrigin[origin] = result.value.flights.sort((a, b) => a.price - b.price);
+      resultsByOrigin[origin].push(...result.value.flights);
     } else {
-      resultsByOrigin[origin] = [];
       errors.add(origin);
     }
   });
+
+  for (const origin of origins) {
+    resultsByOrigin[origin] = resultsByOrigin[origin].sort((a, b) => a.price - b.price).slice(0, maxResults);
+  }
 
   return { resultsByOrigin, errors };
 }
@@ -84,22 +98,22 @@ export async function POST(request: Request) {
   }
 
   const origins = normalizeStringArray(body.origins);
-  const destination = typeof body.destination === "string" ? body.destination.trim().toUpperCase() : "";
+  const destinations = getDestinationCodes(body);
   const date = typeof body.date === "string" ? body.date.trim() : "";
   const adults = typeof body.adults === "number" && body.adults > 0 ? Math.floor(body.adults) : DEFAULT_ADULTS;
   const maxResults = typeof body.maxResults === "number" && body.maxResults > 0 ? Math.floor(body.maxResults) : DEFAULT_MAX_RESULTS;
   const nonStop = typeof body.nonStop === "boolean" ? body.nonStop : undefined;
 
-  if (origins.length === 0 || !destination || !date) {
-    return NextResponse.json({ error: "origins, destination and date are required" }, { status: 400 });
+  if (origins.length === 0 || destinations.length === 0 || !date) {
+    return NextResponse.json({ error: "origins, destination/destinations and date are required" }, { status: 400 });
   }
 
   const provider = getConfiguredProvider();
-  const { resultsByOrigin, errors } = await searchOrigins(provider, origins, destination, date, adults, maxResults, nonStop);
+  const { resultsByOrigin, errors } = await searchOrigins(provider, origins, destinations, date, adults, maxResults, nonStop);
   const flights = Object.values(resultsByOrigin).flat().sort((a, b) => a.price - b.price);
 
   if (flights.length === 0 && provider !== mockFlightProvider) {
-    const fallback = await searchOrigins(mockFlightProvider, origins, destination, date, adults, maxResults, nonStop);
+    const fallback = await searchOrigins(mockFlightProvider, origins, destinations, date, adults, maxResults, nonStop);
     const fallbackFlights = Object.values(fallback.resultsByOrigin).flat().sort((a, b) => a.price - b.price);
 
     return NextResponse.json({
