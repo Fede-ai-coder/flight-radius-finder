@@ -49,3 +49,19 @@ export function findDepartureLocation(query: string): DepartureOption | undefine
     return normalizedLabel === normalizedQuery || option.aliases.some((alias) => alias === normalizedQuery);
   });
 }
+
+export function resolveDepartureCodes(query: string): string[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return [];
+
+  const exactAirportCodeMatch = AIRPORTS.find((airport) => airport.code.toLowerCase() === normalizedQuery);
+  if (exactAirportCodeMatch) return [exactAirportCodeMatch.code];
+
+  const codes = AIRPORTS.filter((airport) => {
+    const city = airport.city.toLowerCase();
+    const name = airport.name.toLowerCase();
+    return city.includes(normalizedQuery) || name.includes(normalizedQuery);
+  }).map((airport) => airport.code);
+
+  return Array.from(new Set(codes));
+}
