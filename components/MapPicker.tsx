@@ -21,6 +21,7 @@ type MapPickerProps = {
   onSelect: (next: Coordinate) => void;
   onAddPolygonPoint?: (next: Coordinate) => void;
   onMovePolygonPoint?: (index: number, next: Coordinate) => void;
+  onInsertPolygonPoint?: (afterIndex: number, next: Coordinate) => void;
 };
 
 const markerIcon = L.icon({
@@ -38,12 +39,23 @@ const polygonMarkerIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
+const edgeHandleIcon = L.divIcon({
+  className: "",
+  html: '<span style="display:block;width:12px;height:12px;border-radius:9999px;background:#38bdf8;border:2px solid white;box-shadow:0 1px 4px rgba(15,23,42,.28);cursor:grab;"></span>',
+  iconSize: [12, 12],
+  iconAnchor: [6, 6],
+});
+
 const resultAirportIcon = L.divIcon({
   className: "",
   html: '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:#16a34a;border:3px solid white;box-shadow:0 2px 8px rgba(15,23,42,.35);color:white;font-size:14px;font-weight:800;">✈</span>',
   iconSize: [28, 28],
   iconAnchor: [14, 14],
 });
+
+function midpoint(a: Coordinate, b: Coordinate): Coordinate {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
 
 function ClickHandler({ mode, onSelect, onAddPolygonPoint }: { mode: "radius" | "polygon"; onSelect: (next: Coordinate) => void; onAddPolygonPoint?: (next: Coordinate) => void }) {
   useMapEvents({
@@ -72,8 +84,14 @@ function MapCenterUpdater({ center, enabled }: { center: Coordinate; enabled: bo
   return null;
 }
 
-export default function MapPicker({ center, radiusKm, mode = "radius", polygonPoints = [], highlightedAirports = [], onSelect, onAddPolygonPoint, onMovePolygonPoint }: MapPickerProps) {
+export default function MapPicker({ center, radiusKm, mode = "radius", polygonPoints = [], highlightedAirports = [], onSelect, onAddPolygonPoint, onMovePolygonPoint, onInsertPolygonPoint }: MapPickerProps) {
   const hasPolygon = polygonPoints.length >= 3;
+  const edgeHandles = hasPolygon
+    ? polygonPoints.map((point, index) => ({
+        afterIndex: index,
+        position: midpoint(point, polygonPoints[(index + 1) % polygonPoints.length]),
+      }))
+    : [];
 
   return (
     <MapContainer center={center} zoom={6} className="h-full w-full rounded-xl">
@@ -102,6 +120,21 @@ export default function MapPicker({ center, radiusKm, mode = "radius", polygonPo
       ))}
       {mode === "polygon" && polygonPoints.length >= 2 && <Polyline positions={polygonPoints} pathOptions={{ color: "#2563eb", weight: 3 }} />}
       {mode === "polygon" && hasPolygon && <Polygon positions={polygonPoints} pathOptions={{ color: "#2563eb", fillOpacity: 0.16 }} />}
+      {mode === "polygon" && edgeHandles.map((handle) => (
+        <Marker
+          key={`edge-${handle.afterIndex}-${handle.position[0]}-${handle.position[1]}`}
+          position={handle.position}
+          icon={edgeHandleIcon}
+          draggable
+          eventHandlers={{
+            dragend(event) {
+              const marker = event.target;
+              const latLng = marker.getLatLng();
+              onInsertPolygonPoint?.(handle.afterIndex, [latLng.lat, latLng.lng]);
+            },
+          }}
+        />
+      ))}
       {highlightedAirports.map((airport) => (
         <Marker key={`result-${airport.code}`} position={[airport.lat, airport.lng]} icon={resultAirportIcon} zIndexOffset={1000}>
           <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={false}>
