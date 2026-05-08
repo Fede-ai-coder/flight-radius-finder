@@ -1,4 +1,5 @@
 import { AIRPORTS } from "@/data/airports";
+import { distanceKm } from "@/lib/geo";
 
 export type DestinationOption = {
   label: string;
@@ -10,7 +11,7 @@ export type DestinationOption = {
 export type DestinationResolution = {
   codes: string[];
   label: string;
-  mode: "city" | "airport" | "custom";
+  mode: "city" | "airport" | "custom" | "multiple" | "area";
   description: string;
 };
 
@@ -30,6 +31,8 @@ const CITY_DESTINATIONS: DestinationOption[] = [
   { label: "Madrid", aliases: ["madrid"], codes: ["MAD"], type: "city" },
   { label: "Amsterdam", aliases: ["amsterdam"], codes: ["AMS"], type: "city" },
   { label: "Berlin", aliases: ["berlin", "berlino"], codes: ["BER"], type: "city" },
+  { label: "New York", aliases: ["new york", "nyc"], codes: ["JFK", "EWR", "LGA"], type: "city" },
+  { label: "Los Angeles", aliases: ["los angeles", "la"], codes: ["LAX"], type: "city" },
 ];
 
 const AIRPORT_DESTINATIONS: DestinationOption[] = AIRPORTS.map((airport) => ({
@@ -41,6 +44,17 @@ const AIRPORT_DESTINATIONS: DestinationOption[] = AIRPORTS.map((airport) => ({
 
 export const DESTINATION_OPTIONS: DestinationOption[] = [...CITY_DESTINATIONS, ...AIRPORT_DESTINATIONS];
 
+function uniqueCodes(codes: string[]): string[] {
+  return Array.from(new Set(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)));
+}
+
+export function parseDestinationQueries(query: string): string[] {
+  return query
+    .split(/[;,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function findDestinationOption(query: string): DestinationOption | undefined {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return undefined;
@@ -51,7 +65,7 @@ function findDestinationOption(query: string): DestinationOption | undefined {
   });
 }
 
-export function resolveDestination(query: string): DestinationResolution {
+function resolveSingleDestination(query: string): DestinationResolution {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) {
     return { codes: [], label: "", mode: "custom", description: "Enter a destination city or airport" };
@@ -79,8 +93,58 @@ export function resolveDestination(query: string): DestinationResolution {
   };
 }
 
-export function resolveDestinationCodes(query: string): string[] {
-  return resolveDestination(query).codes;
+function expandCodesByArrivalRadius(codes: string[], arrivalRadiusKm: number): string[] {
+  const baseCodes = uniqueCodes(codes);
+  if (arrivalRadiusKm <= 0) return baseCodes;
+
+  const baseAirports = baseCodes
+    .map((code) => AIRPORTS.find((airport) => airport.code === code))
+    .filter(Boolean);
+
+  if (baseAirports.length === 0) return baseCodes;
+
+  const nearbyCodes = AIRPORTS.filter((airport) =>
+    baseAirports.some((baseAirport) =>
+      baseAirport && distanceKm(baseAirport.lat, baseAirport.lng, airport.lat, airport.lng) <= arrivalRadiusKm,
+    ),
+  ).map((airport) => airport.code);
+
+  return uniqueCodes([...baseCodes, ...nearbyCodes]);
+}
+
+export function resolveDestination(query: string, arrivalRadiusKm = 0): DestinationResolution {
+  const queries = parseDestinationQueries(query);
+  if (queries.length === 0) {
+    return { codes: [], label: "", mode: "custom", description: "Enter one or more destination cities or airports" };
+  }
+
+  const resolutions = queries.map(resolveSingleDestination);
+  const baseCodes = uniqueCodes(resolutions.flatMap((resolution) => resolution.codes));
+  const codes = expandCodesByArrivalRadius(baseCodes, arrivalRadiusKm);
+  const label = codes.join(" / ");
+  const multipleDestinations = queries.length > 1;
+
+  if (multipleDestinations || arrivalRadiusKm > 0) {
+    const destinationList = queries.join(", ");
+    const parts = [
+      multipleDestinations ? `Multiple destinations: ${destinationList}` : resolutions[0]?.description,
+      arrivalRadiusKm > 0 ? `arrival area within ${arrivalRadiusKm} km` : null,
+      label ? `searching ${label}` : null,
+    ].filter(Boolean);
+
+    return {
+      codes,
+      label,
+      mode: arrivalRadiusKm > 0 ? "area" : "multiple",
+      description: parts.join(" · "),
+    };
+  }
+
+  return resolutions[0];
+}
+
+export function resolveDestinationCodes(query: string, arrivalRadiusKm = 0): string[] {
+  return resolveDestination(query, arrivalRadiusKm).codes;
 }
 
 export function resolveDestinationCode(query: string): string {
