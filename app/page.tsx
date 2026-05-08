@@ -5,11 +5,10 @@ import { useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { airportsWithinPolygon, airportsWithinRadius, type Coordinate } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
-import { DESTINATION_OPTIONS, resolveDestination, resolveDestinationCodes } from "@/lib/destinationSearch";
+import { DESTINATION_OPTIONS, resolveDestination } from "@/lib/destinationSearch";
 import type { FlightResult } from "@/lib/flightProviders/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
-
 const RADIUS_OPTIONS = [50, 100, 200, 300];
 const ARRIVAL_RADIUS_OPTIONS = [0, 50, 100, 200];
 const ADULT_OPTIONS = [1, 2, 3, 4];
@@ -64,7 +63,13 @@ export default function HomePage() {
   const originAirportByCode = useMemo(() => new Map(nearbyAirports.map((airport) => [airport.code, airport])), [nearbyAirports]);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
-  const highlightedAirports = useMemo(() => originSummaries.filter((summary) => summary.status === "found").map((summary) => { const airport = originAirportByCode.get(summary.origin); return airport ? { ...airport, resultCount: summary.resultCount, cheapestPrice: summary.cheapestPrice, currency: summary.currency } : null; }).filter((airport): airport is NonNullable<typeof airport> => Boolean(airport)), [originSummaries, originAirportByCode]);
+  const highlightedAirports = useMemo(() => originSummaries
+    .filter((summary) => summary.status === "found")
+    .map((summary) => {
+      const airport = originAirportByCode.get(summary.origin);
+      return airport ? { ...airport, resultCount: summary.resultCount, cheapestPrice: summary.cheapestPrice, currency: summary.currency } : null;
+    })
+    .filter((airport): airport is NonNullable<typeof airport> => Boolean(airport)), [originSummaries, originAirportByCode]);
   const alternateArrivalCount = visibleFlights.filter((flight) => destinationCodes.length > 0 && !destinationCodes.includes(flight.to)).length;
   const departureAreaLabel = departureSearchMode === "polygon" ? `drawn area (${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"})` : `${radiusKm} km`;
   const currentSearchSignature = useMemo(() => JSON.stringify({ departureSearchMode, polygon: departurePolygon, origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm }), [departureSearchMode, departurePolygon, nearbyOriginCodes, destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm]);
@@ -79,46 +84,36 @@ export default function HomePage() {
     setDeparturePolygon((current) => current.map((currentPoint, currentIndex) => currentIndex === index ? point : currentPoint));
   }
 
-  function handleUndoPolygonPoint() {
-    setDeparturePolygon((current) => current.slice(0, -1));
-  }
-
-  function handleClearPolygon() {
-    setDeparturePolygon([]);
+  function handleInsertPolygonPoint(afterIndex: number, point: Coordinate) {
+    setDeparturePolygon((current) => [...current.slice(0, afterIndex + 1), point, ...current.slice(afterIndex + 1)]);
   }
 
   async function handleSearchFlights() {
     if (!canSearch) return;
-
     setIsLoadingFlights(true);
     setFlightError(null);
-
     try {
       const response = await fetch("/api/flights/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop }),
       });
-
       if (!response.ok) throw new Error("Flight search failed");
-
       const data = (await response.json()) as FlightSearchResponse;
       setFlights(data.flights ?? []);
       setOriginSummaries(data.originSummaries ?? []);
       setSearchMeta(data.searchMeta ?? null);
       setSelectedOriginFilter("all");
       setFlightSource(data.source ?? null);
-      setHasSearched(true);
-      setLastSearchSignature(currentSearchSignature);
     } catch (error) {
       setFlights([]);
       setOriginSummaries([]);
       setSearchMeta(null);
       setFlightSource(null);
       setFlightError(error instanceof Error ? error.message : "Flight search failed");
+    } finally {
       setHasSearched(true);
       setLastSearchSignature(currentSearchSignature);
-    } finally {
       setIsLoadingFlights(false);
     }
   }
@@ -138,11 +133,11 @@ export default function HomePage() {
           <div className="mb-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => setDepartureSearchMode("radius")} className={`rounded-lg border px-3 py-2 text-sm ${departureSearchMode === "radius" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>Radius mode</button>
             <button type="button" onClick={() => setDepartureSearchMode("polygon")} className={`rounded-lg border px-3 py-2 text-sm ${departureSearchMode === "polygon" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>Draw area</button>
-            {departureSearchMode === "polygon" && <button type="button" onClick={handleUndoPolygonPoint} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Undo point</button>}
-            {departureSearchMode === "polygon" && <button type="button" onClick={handleClearPolygon} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Clear area</button>}
+            {departureSearchMode === "polygon" && <button type="button" onClick={() => setDeparturePolygon((current) => current.slice(0, -1))} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Undo point</button>}
+            {departureSearchMode === "polygon" && <button type="button" onClick={() => setDeparturePolygon([])} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Clear area</button>}
           </div>
-          {departureSearchMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Click on the map to add at least 3 points and draw a custom departure area. Drag any blue point to reshape the area.</p>}
-          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={departureSearchMode} polygonPoints={departurePolygon} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} /></div>
+          {departureSearchMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Click on the map to add at least 3 points and draw a custom departure area. Drag blue points to reshape the area, or drag the light-blue line handles to pull out a new edge.</p>}
+          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={departureSearchMode} polygonPoints={departurePolygon} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} onInsertPolygonPoint={handleInsertPolygonPoint} /></div>
           <p className="mt-3 text-sm text-slate-600">{departureSearchMode === "polygon" ? `Drawn departure area: ${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"}` : `Selected location: ${selectedPoint[0].toFixed(4)}, ${selectedPoint[1].toFixed(4)}`}</p>
           {highlightedAirports.length > 0 && <p className="mt-1 text-sm font-medium text-green-700">Highlighted result airports: {highlightedAirports.map((airport) => airport.code).join(", ")}</p>}
         </div>
