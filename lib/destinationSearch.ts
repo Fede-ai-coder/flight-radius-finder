@@ -7,6 +7,13 @@ export type DestinationOption = {
   type: "city" | "airport";
 };
 
+export type DestinationResolution = {
+  codes: string[];
+  label: string;
+  mode: "city" | "airport" | "custom";
+  description: string;
+};
+
 const CITY_DESTINATIONS: DestinationOption[] = [
   { label: "Rome", aliases: ["rome", "roma"], codes: ["FCO", "CIA"], type: "city" },
   { label: "Milan", aliases: ["milan", "milano"], codes: ["MXP", "LIN", "BGY"], type: "city" },
@@ -44,14 +51,36 @@ function findDestinationOption(query: string): DestinationOption | undefined {
   });
 }
 
-export function resolveDestinationCodes(query: string): string[] {
+export function resolveDestination(query: string): DestinationResolution {
   const normalizedQuery = query.trim();
-  if (!normalizedQuery) return [];
+  if (!normalizedQuery) {
+    return { codes: [], label: "", mode: "custom", description: "Enter a destination city or airport" };
+  }
 
   const exactMatch = findDestinationOption(query);
-  if (exactMatch) return exactMatch.codes;
+  if (exactMatch) {
+    const codeLabel = exactMatch.codes.join(" / ");
+    return {
+      codes: exactMatch.codes,
+      label: codeLabel,
+      mode: exactMatch.type,
+      description: exactMatch.type === "city"
+        ? `City destination: ${exactMatch.label} airports — ${codeLabel}`
+        : `Exact airport: ${exactMatch.codes[0]}`,
+    };
+  }
 
-  return [normalizedQuery.toUpperCase()];
+  const customCode = normalizedQuery.toUpperCase();
+  return {
+    codes: [customCode],
+    label: customCode,
+    mode: "custom",
+    description: `Custom code: ${customCode}`,
+  };
+}
+
+export function resolveDestinationCodes(query: string): string[] {
+  return resolveDestination(query).codes;
 }
 
 export function resolveDestinationCode(query: string): string {
