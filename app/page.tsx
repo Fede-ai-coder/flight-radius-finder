@@ -64,6 +64,7 @@ export default function HomePage() {
   const originAirportByCode = useMemo(() => new Map(nearbyAirports.map((airport) => [airport.code, airport])), [nearbyAirports]);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
+  const highlightedAirports = useMemo(() => originSummaries.filter((summary) => summary.status === "found").map((summary) => { const airport = originAirportByCode.get(summary.origin); return airport ? { ...airport, resultCount: summary.resultCount, cheapestPrice: summary.cheapestPrice, currency: summary.currency } : null; }).filter((airport): airport is NonNullable<typeof airport> => Boolean(airport)), [originSummaries, originAirportByCode]);
   const alternateArrivalCount = visibleFlights.filter((flight) => destinationCodes.length > 0 && !destinationCodes.includes(flight.to)).length;
   const departureAreaLabel = departureSearchMode === "polygon" ? `drawn area (${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"})` : `${radiusKm} km`;
   const currentSearchSignature = useMemo(() => JSON.stringify({ departureSearchMode, polygon: departurePolygon, origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm }), [departureSearchMode, departurePolygon, nearbyOriginCodes, destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm]);
@@ -72,6 +73,10 @@ export default function HomePage() {
 
   function handleAddPolygonPoint(point: Coordinate) {
     setDeparturePolygon((current) => [...current, point]);
+  }
+
+  function handleMovePolygonPoint(index: number, point: Coordinate) {
+    setDeparturePolygon((current) => current.map((currentPoint, currentIndex) => currentIndex === index ? point : currentPoint));
   }
 
   function handleUndoPolygonPoint() {
@@ -136,9 +141,10 @@ export default function HomePage() {
             {departureSearchMode === "polygon" && <button type="button" onClick={handleUndoPolygonPoint} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Undo point</button>}
             {departureSearchMode === "polygon" && <button type="button" onClick={handleClearPolygon} disabled={departurePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Clear area</button>}
           </div>
-          {departureSearchMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Click on the map to add at least 3 points and draw a custom departure area.</p>}
-          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={departureSearchMode} polygonPoints={departurePolygon} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} /></div>
+          {departureSearchMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Click on the map to add at least 3 points and draw a custom departure area. Drag any blue point to reshape the area.</p>}
+          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={departureSearchMode} polygonPoints={departurePolygon} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} /></div>
           <p className="mt-3 text-sm text-slate-600">{departureSearchMode === "polygon" ? `Drawn departure area: ${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"}` : `Selected location: ${selectedPoint[0].toFixed(4)}, ${selectedPoint[1].toFixed(4)}`}</p>
+          {highlightedAirports.length > 0 && <p className="mt-1 text-sm font-medium text-green-700">Highlighted result airports: {highlightedAirports.map((airport) => airport.code).join(", ")}</p>}
         </div>
 
         <div className="space-y-4 rounded-2xl bg-white p-4 shadow">
