@@ -1,13 +1,26 @@
 "use client";
 
 import { useEffect } from "react";
-import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polygon, Polyline, Tooltip, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
+import type { Airport } from "@/data/airports";
+import type { Coordinate } from "@/lib/geo";
+
+type HighlightedAirport = Airport & {
+  resultCount?: number;
+  cheapestPrice?: number | null;
+  currency?: string | null;
+};
 
 type MapPickerProps = {
-  center: [number, number];
+  center: Coordinate;
   radiusKm: number;
-  onSelect: (next: [number, number]) => void;
+  mode?: "radius" | "polygon";
+  polygonPoints?: Coordinate[];
+  highlightedAirports?: HighlightedAirport[];
+  onSelect: (next: Coordinate) => void;
+  onAddPolygonPoint?: (next: Coordinate) => void;
+  onMovePolygonPoint?: (index: number, next: Coordinate) => void;
 };
 
 const markerIcon = L.icon({
@@ -18,37 +31,89 @@ const markerIcon = L.icon({
   iconAnchor: [12, 41],
 });
 
-function ClickHandler({ onSelect }: { onSelect: (next: [number, number]) => void }) {
+const polygonMarkerIcon = L.divIcon({
+  className: "",
+  html: '<span style="display:block;width:16px;height:16px;border-radius:9999px;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px rgba(15,23,42,.35);cursor:grab;"></span>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+const resultAirportIcon = L.divIcon({
+  className: "",
+  html: '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:#16a34a;border:3px solid white;box-shadow:0 2px 8px rgba(15,23,42,.35);color:white;font-size:14px;font-weight:800;">✈</span>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
+function ClickHandler({ mode, onSelect, onAddPolygonPoint }: { mode: "radius" | "polygon"; onSelect: (next: Coordinate) => void; onAddPolygonPoint?: (next: Coordinate) => void }) {
   useMapEvents({
     click(event) {
-      onSelect([event.latlng.lat, event.latlng.lng]);
+      const point: Coordinate = [event.latlng.lat, event.latlng.lng];
+      if (mode === "polygon") {
+        onAddPolygonPoint?.(point);
+        return;
+      }
+
+      onSelect(point);
     },
   });
 
   return null;
 }
 
-function MapCenterUpdater({ center }: { center: [number, number] }) {
+function MapCenterUpdater({ center, enabled }: { center: Coordinate; enabled: boolean }) {
   const map = useMap();
 
   useEffect(() => {
+    if (!enabled) return;
     map.setView(center, map.getZoom(), { animate: true });
-  }, [center, map]);
+  }, [center, enabled, map]);
 
   return null;
 }
 
-export default function MapPicker({ center, radiusKm, onSelect }: MapPickerProps) {
+export default function MapPicker({ center, radiusKm, mode = "radius", polygonPoints = [], highlightedAirports = [], onSelect, onAddPolygonPoint, onMovePolygonPoint }: MapPickerProps) {
+  const hasPolygon = polygonPoints.length >= 3;
+
   return (
     <MapContainer center={center} zoom={6} className="h-full w-full rounded-xl">
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <MapCenterUpdater center={center} />
-      <ClickHandler onSelect={onSelect} />
-      <Marker position={center} icon={markerIcon} />
-      <Circle center={center} radius={radiusKm * 1000} pathOptions={{ color: "#2563eb", fillOpacity: 0.15 }} />
+      <MapCenterUpdater center={center} enabled={mode === "radius"} />
+      <ClickHandler mode={mode} onSelect={onSelect} onAddPolygonPoint={onAddPolygonPoint} />
+      {mode === "radius" && <Marker position={center} icon={markerIcon} />}
+      {mode === "radius" && <Circle center={center} radius={radiusKm * 1000} pathOptions={{ color: "#2563eb", fillOpacity: 0.15 }} />}
+      {mode === "polygon" && polygonPoints.map((point, index) => (
+        <Marker
+          key={`${point[0]}-${point[1]}-${index}`}
+          position={point}
+          icon={polygonMarkerIcon}
+          draggable
+          eventHandlers={{
+            dragend(event) {
+              const marker = event.target;
+              const latLng = marker.getLatLng();
+              onMovePolygonPoint?.(index, [latLng.lat, latLng.lng]);
+            },
+          }}
+        />
+      ))}
+      {mode === "polygon" && polygonPoints.length >= 2 && <Polyline positions={polygonPoints} pathOptions={{ color: "#2563eb", weight: 3 }} />}
+      {mode === "polygon" && hasPolygon && <Polygon positions={polygonPoints} pathOptions={{ color: "#2563eb", fillOpacity: 0.16 }} />}
+      {highlightedAirports.map((airport) => (
+        <Marker key={`result-${airport.code}`} position={[airport.lat, airport.lng]} icon={resultAirportIcon} zIndexOffset={1000}>
+          <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={false}>
+            <span>
+              <strong>{airport.code} — {airport.city}</strong>
+              <br />
+              {airport.resultCount ?? 0} result{airport.resultCount === 1 ? "" : "s"}
+              {airport.cheapestPrice !== null && airport.cheapestPrice !== undefined && airport.currency ? ` · from ${airport.currency} ${airport.cheapestPrice}` : ""}
+            </span>
+          </Tooltip>
+        </Marker>
+      ))}
     </MapContainer>
   );
 }
