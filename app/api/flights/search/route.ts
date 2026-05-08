@@ -61,6 +61,18 @@ function enumerateDateRange(from: string, to: string): string[] {
   return dates;
 }
 
+function buildExternalFlightSearchUrl(flight: FlightResult) {
+  const query = encodeURIComponent(`${flight.fromCode} to ${flight.to} ${flight.date} flight`);
+  return `https://www.google.com/travel/flights?q=${query}`;
+}
+
+function ensureBookingUrls(flights: FlightResult[]) {
+  return flights.map((flight) => ({
+    ...flight,
+    bookingUrl: flight.bookingUrl || buildExternalFlightSearchUrl(flight),
+  }));
+}
+
 function getSearchDates(body: FlightSearchBody, fromKey: "outbound" | "return" = "outbound"): { dates: string[]; wasDateRangeLimited: boolean; requestedDateCount: number } {
   const explicitValue = fromKey === "return" ? body.returnDates : body.dates;
   const explicitDates = Array.isArray(explicitValue) ? Array.from(new Set(explicitValue.map(normalizeDate).filter(Boolean))) : [];
@@ -115,7 +127,7 @@ async function searchOrigins(provider: FlightProvider, origins: string[], destin
     if (result.status === "fulfilled") resultsByOrigin[origin].push(...result.value.flights);
     else errors.add(origin);
   });
-  for (const origin of origins) resultsByOrigin[origin] = resultsByOrigin[origin].sort((a, b) => a.price - b.price).slice(0, maxResults);
+  for (const origin of origins) resultsByOrigin[origin] = ensureBookingUrls(resultsByOrigin[origin].sort((a, b) => a.price - b.price).slice(0, maxResults));
   return { resultsByOrigin, errors };
 }
 
