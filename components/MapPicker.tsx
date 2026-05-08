@@ -17,6 +17,7 @@ type MapPickerProps = {
   secondaryPolygons?: PolygonLayer[];
   activePolygonColor?: string;
   highlightedAirports?: HighlightedAirport[];
+  highlightedArrivalAirports?: HighlightedAirport[];
   onSelect: (next: Coordinate) => void;
   onAddPolygonPoint?: (next: Coordinate) => void;
   onMovePolygonPoint?: (index: number, next: Coordinate) => void;
@@ -29,8 +30,13 @@ function divIcon(color: string, size = 16) {
   return L.divIcon({ className: "", html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(15,23,42,.35);cursor:grab;"></span>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
+function airportResultIcon(color: string, label: string) {
+  return L.divIcon({ className: "", html: `<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(15,23,42,.35);color:white;font-size:13px;font-weight:800;">${label}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
+}
+
 const edgeHandleIcon = L.divIcon({ className: "", html: '<span style="display:block;width:12px;height:12px;border-radius:9999px;background:#38bdf8;border:2px solid white;box-shadow:0 1px 4px rgba(15,23,42,.28);cursor:grab;"></span>', iconSize: [12, 12], iconAnchor: [6, 6] });
-const resultAirportIcon = L.divIcon({ className: "", html: '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:#16a34a;border:3px solid white;box-shadow:0 2px 8px rgba(15,23,42,.35);color:white;font-size:14px;font-weight:800;">✈</span>', iconSize: [28, 28], iconAnchor: [14, 14] });
+const departureResultAirportIcon = airportResultIcon("#16a34a", "↗");
+const arrivalResultAirportIcon = airportResultIcon("#f97316", "↘");
 
 function midpoint(a: Coordinate, b: Coordinate): Coordinate { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
 
@@ -50,7 +56,11 @@ function StaticPolygonLayer({ points, color, fillOpacity = 0.1 }: PolygonLayer) 
   return <>{points.length >= 2 && <Polyline positions={points} pathOptions={{ color, weight: 2, dashArray: "6 6" }} />}{points.length >= 3 && <Polygon positions={points} pathOptions={{ color, fillOpacity }} />}</>;
 }
 
-export default function MapPicker({ center, radiusKm, mode = "radius", polygonPoints = [], secondaryPolygons = [], activePolygonColor = "#2563eb", highlightedAirports = [], onSelect, onAddPolygonPoint, onMovePolygonPoint, onInsertPolygonPoint }: MapPickerProps) {
+function AirportMarker({ airport, icon, label }: { airport: HighlightedAirport; icon: L.DivIcon; label: string }) {
+  return <Marker key={`${label}-${airport.code}`} position={[airport.lat, airport.lng]} icon={icon} zIndexOffset={1000}><Tooltip direction="top" offset={[0, -10]} opacity={1}><span><strong>{label}: {airport.code} — {airport.city}</strong><br />{airport.resultCount ?? 0} result{airport.resultCount === 1 ? "" : "s"}{airport.cheapestPrice !== null && airport.cheapestPrice !== undefined && airport.currency ? ` · from ${airport.currency} ${airport.cheapestPrice}` : ""}</span></Tooltip></Marker>;
+}
+
+export default function MapPicker({ center, radiusKm, mode = "radius", polygonPoints = [], secondaryPolygons = [], activePolygonColor = "#2563eb", highlightedAirports = [], highlightedArrivalAirports = [], onSelect, onAddPolygonPoint, onMovePolygonPoint, onInsertPolygonPoint }: MapPickerProps) {
   const hasPolygon = polygonPoints.length >= 3;
   const edgeHandles = hasPolygon ? polygonPoints.map((point, index) => ({ afterIndex: index, position: midpoint(point, polygonPoints[(index + 1) % polygonPoints.length]) })) : [];
   const activeVertexIcon = divIcon(activePolygonColor, 16);
@@ -67,7 +77,8 @@ export default function MapPicker({ center, radiusKm, mode = "radius", polygonPo
       {mode === "polygon" && hasPolygon && <Polygon positions={polygonPoints} pathOptions={{ color: activePolygonColor, fillOpacity: 0.16 }} />}
       {mode === "polygon" && polygonPoints.map((point, index) => <Marker key={`${point[0]}-${point[1]}-${index}`} position={point} icon={activeVertexIcon} draggable eventHandlers={{ dragend(event) { const latLng = event.target.getLatLng(); onMovePolygonPoint?.(index, [latLng.lat, latLng.lng]); } }} />)}
       {mode === "polygon" && edgeHandles.map((handle) => <Marker key={`edge-${handle.afterIndex}-${handle.position[0]}-${handle.position[1]}`} position={handle.position} icon={edgeHandleIcon} draggable eventHandlers={{ dragend(event) { const latLng = event.target.getLatLng(); onInsertPolygonPoint?.(handle.afterIndex, [latLng.lat, latLng.lng]); } }} />)}
-      {highlightedAirports.map((airport) => <Marker key={`result-${airport.code}`} position={[airport.lat, airport.lng]} icon={resultAirportIcon} zIndexOffset={1000}><Tooltip direction="top" offset={[0, -10]} opacity={1}><span><strong>{airport.code} — {airport.city}</strong><br />{airport.resultCount ?? 0} result{airport.resultCount === 1 ? "" : "s"}{airport.cheapestPrice !== null && airport.cheapestPrice !== undefined && airport.currency ? ` · from ${airport.currency} ${airport.cheapestPrice}` : ""}</span></Tooltip></Marker>)}
+      {highlightedAirports.map((airport) => <AirportMarker key={`departure-result-${airport.code}`} airport={airport} icon={departureResultAirportIcon} label="Departure" />)}
+      {highlightedArrivalAirports.map((airport) => <AirportMarker key={`arrival-result-${airport.code}`} airport={airport} icon={arrivalResultAirportIcon} label="Arrival" />)}
     </MapContainer>
   );
 }
