@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { airportsWithinRadius } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
@@ -41,10 +41,13 @@ export default function HomePage() {
   const [flightSource, setFlightSource] = useState<string | null>(null);
   const [isLoadingFlights, setIsLoadingFlights] = useState(false);
   const [flightError, setFlightError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [lastSearchSignature, setLastSearchSignature] = useState<string | null>(null);
 
   const departureSuggestions = useMemo(() => DEPARTURE_OPTIONS.map((option) => option.label), []);
   const destinationSuggestions = useMemo(() => DESTINATION_OPTIONS.map((option) => option.label), []);
   const nearbyAirports = useMemo(() => airportsWithinRadius(AIRPORTS, selectedPoint[0], selectedPoint[1], radiusKm), [selectedPoint, radiusKm]);
+  const nearbyOriginCodes = useMemo(() => nearbyAirports.map((airport) => airport.code), [nearbyAirports]);
   const visibleFlights = useMemo(() => selectedOriginFilter === "all" ? flights : flights.filter((flight) => flight.fromCode === selectedOriginFilter), [flights, selectedOriginFilter]);
   const destinationResolution = useMemo(() => resolveDestination(destination), [destination]);
   const destinationCodes = destinationResolution.codes;
@@ -53,36 +56,45 @@ export default function HomePage() {
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
   const alternateArrivalCount = visibleFlights.filter((flight) => destinationCodes.length > 0 && !destinationCodes.includes(flight.to)).length;
+  const currentSearchSignature = useMemo(() => JSON.stringify({ origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop }), [nearbyOriginCodes, destinationCodes, date, adults, maxResults, nonStop]);
+  const hasPendingSearchChanges = hasSearched && lastSearchSignature !== currentSearchSignature;
+  const canSearch = nearbyOriginCodes.length > 0 && destinationCodes.length > 0 && Boolean(date) && !isLoadingFlights;
 
-  useEffect(() => {
-    const origins = nearbyAirports.map((airport) => airport.code);
-    const destinations = resolveDestinationCodes(destination);
+  async function handleSearchFlights() {
+    if (!canSearch) return;
 
-    if (destinations.length === 0 || !date || origins.length === 0) {
-      setFlights([]); setOriginSummaries([]); setSearchMeta(null); setFlightSource(null); return;
+    setIsLoadingFlights(true);
+    setFlightError(null);
+
+    try {
+      const response = await fetch("/api/flights/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop }),
+      });
+
+      if (!response.ok) throw new Error("Flight search failed");
+
+      const data = (await response.json()) as FlightSearchResponse;
+      setFlights(data.flights ?? []);
+      setOriginSummaries(data.originSummaries ?? []);
+      setSearchMeta(data.searchMeta ?? null);
+      setSelectedOriginFilter("all");
+      setFlightSource(data.source ?? null);
+      setHasSearched(true);
+      setLastSearchSignature(currentSearchSignature);
+    } catch (error) {
+      setFlights([]);
+      setOriginSummaries([]);
+      setSearchMeta(null);
+      setFlightSource(null);
+      setFlightError(error instanceof Error ? error.message : "Flight search failed");
+      setHasSearched(true);
+      setLastSearchSignature(currentSearchSignature);
+    } finally {
+      setIsLoadingFlights(false);
     }
-
-    let isActive = true;
-
-    async function loadFlights() {
-      setIsLoadingFlights(true); setFlightError(null);
-      try {
-        const response = await fetch("/api/flights/search", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origins, destinations, date, adults, maxResults, nonStop }),
-        });
-        if (!response.ok) throw new Error("Flight search failed");
-        const data = (await response.json()) as FlightSearchResponse;
-        if (isActive) { setFlights(data.flights ?? []); setOriginSummaries(data.originSummaries ?? []); setSearchMeta(data.searchMeta ?? null); setSelectedOriginFilter("all"); setFlightSource(data.source ?? null); }
-      } catch (error) {
-        if (isActive) { setFlights([]); setOriginSummaries([]); setSearchMeta(null); setFlightSource(null); setFlightError(error instanceof Error ? error.message : "Flight search failed"); }
-      } finally {
-        if (isActive) setIsLoadingFlights(false);
-      }
-    }
-    loadFlights();
-    return () => { isActive = false; };
-  }, [nearbyAirports, destination, date, adults, maxResults, nonStop]);
+  }
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl p-4 md:p-8">
@@ -106,6 +118,8 @@ export default function HomePage() {
           <div><label className="mb-2 block text-sm font-medium">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div className="grid grid-cols-2 gap-3"><div><label className="mb-2 block text-sm font-medium">Adults</label><select value={adults} onChange={(e) => setAdults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{ADULT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div><label className="mb-2 block text-sm font-medium">Max results</label><select value={maxResults} onChange={(e) => setMaxResults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{MAX_RESULTS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div></div>
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={nonStop} onChange={(e) => setNonStop(e.target.checked)} className="h-4 w-4" /> Direct only</label>
+          <button type="button" onClick={handleSearchFlights} disabled={!canSearch} className={`w-full rounded-lg px-4 py-3 text-sm font-semibold ${canSearch ? "bg-blue-600 text-white hover:bg-blue-700" : "cursor-not-allowed bg-slate-200 text-slate-500"}`}>{isLoadingFlights ? "Searching flights..." : "Search flights"}</button>
+          <p className="text-xs text-slate-500">Results update only when you press Search flights, so changing filters will not trigger extra API calls.</p>
           <div className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">Nearby airports: {nearbyAirports.length}</p><ul className="mt-2 space-y-1 text-slate-700">{nearbyAirports.map((airport) => <li key={airport.code}>{airport.code} - {airport.city} ({airport.distanceKm.toFixed(1)} km)</li>)}{nearbyAirports.length === 0 && <li>No airports in this radius.</li>}</ul></div>
         </div>
       </section>
@@ -113,7 +127,9 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
         <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-xl font-semibold">Flight results</h2><p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider and grouped by origin airport.</p></div><div className="text-right text-sm text-slate-500"><p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>{isLoadingFlights && <p>Loading results...</p>}</div></div>
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.</div>
-        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {nearbyAirports.length} origin airports within {radiusKm} km → {destinationLabel || "—"} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>
+        {!hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">Choose your departure area, radius, destination and date, then click <span className="font-semibold">Search flights</span>.</div>}
+        {hasPendingSearchChanges && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Search settings changed. Click <span className="font-semibold">Search flights</span> to refresh the results.</div>}
+        {hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {originSummaries.length || nearbyAirports.length} origin airports within {radiusKm} km → {destinationLabel || "—"} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>}
         {searchMeta?.wasLimited && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="font-semibold">Search limited:</span> checked {searchMeta.searchedCombinations} of {searchMeta.requestedCombinations} origin-destination combinations to protect provider limits. Try reducing the radius or choosing a more specific destination airport to search fewer combinations.</div>}
         {alternateArrivalCount > 0 && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{alternateArrivalCount} visible result{alternateArrivalCount === 1 ? "" : "s"} arrive at an airport different from the requested destination {destinationLabel}. These are shown as alternative arrival airports.</div>}
         {flightSource === "mock-fallback" && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No Duffel test results were found for this search. Showing mock fallback results.</div>}
@@ -123,7 +139,7 @@ export default function HomePage() {
 
         {originSummaries.length > 0 && <div className="mb-4 flex items-center justify-between gap-2"><button type="button" onClick={() => setSelectedOriginFilter("all")} className={`rounded-lg border px-3 py-2 text-sm ${selectedOriginFilter === "all" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>Show all airports</button><p className="text-sm text-slate-500">Showing {visibleFlights.length} of {flights.length} results</p></div>}
 
-        <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr className="border-b text-slate-600"><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Date</th><th className="p-2">Airline</th><th className="p-2">Departure</th><th className="p-2">Arrival</th><th className="p-2">Duration</th><th className="p-2">Stops</th><th className="p-2">Price</th></tr></thead><tbody>{visibleFlights.map((flight) => { const isAlternativeArrival = destinationCodes.length > 0 && !destinationCodes.includes(flight.to); return <tr key={flight.id} className="border-b last:border-b-0"><td className="p-2">{flight.fromCode} ({flight.fromCity})</td><td className="p-2">{flight.to}{isAlternativeArrival && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">alternative</span>}</td><td className="p-2">{flight.date}</td><td className="p-2">{flight.airline}</td><td className="p-2">{flight.departureTime}</td><td className="p-2">{flight.arrivalTime}</td><td className="p-2">{flight.duration}</td><td className="p-2">{flight.stops}</td><td className="p-2">{flight.currency} {flight.price}</td></tr>; })}{visibleFlights.length === 0 && <tr><td colSpan={9} className="p-3 text-slate-500">No results for the selected airport filter.</td></tr>}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr className="border-b text-slate-600"><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Date</th><th className="p-2">Airline</th><th className="p-2">Departure</th><th className="p-2">Arrival</th><th className="p-2">Duration</th><th className="p-2">Stops</th><th className="p-2">Price</th></tr></thead><tbody>{visibleFlights.map((flight) => { const isAlternativeArrival = destinationCodes.length > 0 && !destinationCodes.includes(flight.to); return <tr key={flight.id} className="border-b last:border-b-0"><td className="p-2">{flight.fromCode} ({flight.fromCity})</td><td className="p-2">{flight.to}{isAlternativeArrival && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">alternative</span>}</td><td className="p-2">{flight.date}</td><td className="p-2">{flight.airline}</td><td className="p-2">{flight.departureTime}</td><td className="p-2">{flight.arrivalTime}</td><td className="p-2">{flight.duration}</td><td className="p-2">{flight.stops}</td><td className="p-2">{flight.currency} {flight.price}</td></tr>; })}{visibleFlights.length === 0 && <tr><td colSpan={9} className="p-3 text-slate-500">{hasSearched ? "No results for the selected airport filter." : "No search run yet."}</td></tr>}</tbody></table></div>
       </section>
     </main>
   );
