@@ -5,7 +5,7 @@ import type { FlightProvider, FlightResult } from "@/lib/flightProviders/types";
 
 const DEFAULT_ADULTS = 1;
 const DEFAULT_MAX_RESULTS = 5;
-const MAX_SEARCH_COMBINATIONS = 30;
+const MAX_SEARCH_COMBINATIONS = 200;
 const MAX_DATE_RANGE_DAYS = 14;
 
 type FlightSearchBody = {
@@ -25,7 +25,8 @@ type FlightSearchBody = {
   nonStop?: unknown;
 };
 
-type OriginSummary = { origin: string; resultCount: number; cheapestPrice: number | null; currency: string | null; status: "found" | "empty" | "error" };
+type OriginSummaryStatus = "found" | "partial" | "empty" | "error";
+type OriginSummary = { origin: string; resultCount: number; cheapestPrice: number | null; currency: string | null; status: OriginSummaryStatus };
 
 type SearchLeg = {
   origins: string[];
@@ -95,7 +96,12 @@ function buildOriginSummaries(origins: string[], resultsByOrigin: Record<string,
   return origins.map((origin) => {
     const originFlights = resultsByOrigin[origin] ?? [];
     const cheapest = originFlights[0];
-    return { origin, resultCount: originFlights.length, cheapestPrice: cheapest?.price ?? null, currency: cheapest?.currency ?? null, status: errors.has(origin) ? "error" : originFlights.length > 0 ? "found" : "empty" };
+    const hasError = errors.has(origin);
+    let status: OriginSummaryStatus = "empty";
+    if (originFlights.length > 0 && hasError) status = "partial";
+    else if (originFlights.length > 0) status = "found";
+    else if (hasError) status = "error";
+    return { origin, resultCount: originFlights.length, cheapestPrice: cheapest?.price ?? null, currency: cheapest?.currency ?? null, status };
   });
 }
 
