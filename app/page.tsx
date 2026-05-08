@@ -15,7 +15,8 @@ const ADULT_OPTIONS = [1, 2, 3, 4];
 const MAX_RESULTS_OPTIONS = [3, 5, 10];
 
 type OriginSummary = { origin: string; resultCount: number; cheapestPrice: number | null; currency: string | null; status: "found" | "empty" | "error" };
-type FlightSearchResponse = { flights?: FlightResult[]; source?: string; originSummaries?: OriginSummary[] };
+type SearchMeta = { requestedOriginCount: number; searchedOriginCount: number; destinationCount: number; requestedCombinations: number; searchedCombinations: number; maxCombinations: number; wasLimited: boolean };
+type FlightSearchResponse = { flights?: FlightResult[]; source?: string; originSummaries?: OriginSummary[]; searchMeta?: SearchMeta };
 
 function getSourceLabel(source: string | null) {
   if (source === "duffel") return "Duffel test API";
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [nonStop, setNonStop] = useState(false);
   const [flights, setFlights] = useState<FlightResult[]>([]);
   const [originSummaries, setOriginSummaries] = useState<OriginSummary[]>([]);
+  const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
   const [selectedOriginFilter, setSelectedOriginFilter] = useState("all");
   const [flightSource, setFlightSource] = useState<string | null>(null);
   const [isLoadingFlights, setIsLoadingFlights] = useState(false);
@@ -57,7 +59,7 @@ export default function HomePage() {
     const destinations = resolveDestinationCodes(destination);
 
     if (destinations.length === 0 || !date || origins.length === 0) {
-      setFlights([]); setOriginSummaries([]); setFlightSource(null); return;
+      setFlights([]); setOriginSummaries([]); setSearchMeta(null); setFlightSource(null); return;
     }
 
     let isActive = true;
@@ -71,9 +73,9 @@ export default function HomePage() {
         });
         if (!response.ok) throw new Error("Flight search failed");
         const data = (await response.json()) as FlightSearchResponse;
-        if (isActive) { setFlights(data.flights ?? []); setOriginSummaries(data.originSummaries ?? []); setSelectedOriginFilter("all"); setFlightSource(data.source ?? null); }
+        if (isActive) { setFlights(data.flights ?? []); setOriginSummaries(data.originSummaries ?? []); setSearchMeta(data.searchMeta ?? null); setSelectedOriginFilter("all"); setFlightSource(data.source ?? null); }
       } catch (error) {
-        if (isActive) { setFlights([]); setOriginSummaries([]); setFlightSource(null); setFlightError(error instanceof Error ? error.message : "Flight search failed"); }
+        if (isActive) { setFlights([]); setOriginSummaries([]); setSearchMeta(null); setFlightSource(null); setFlightError(error instanceof Error ? error.message : "Flight search failed"); }
       } finally {
         if (isActive) setIsLoadingFlights(false);
       }
@@ -112,6 +114,7 @@ export default function HomePage() {
         <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-xl font-semibold">Flight results</h2><p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider and grouped by origin airport.</p></div><div className="text-right text-sm text-slate-500"><p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>{isLoadingFlights && <p>Loading results...</p>}</div></div>
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.</div>
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {nearbyAirports.length} origin airports within {radiusKm} km → {destinationLabel || "—"} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>
+        {searchMeta?.wasLimited && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="font-semibold">Search limited:</span> checked {searchMeta.searchedCombinations} of {searchMeta.requestedCombinations} origin-destination combinations to protect provider limits. Try reducing the radius or choosing a more specific destination airport to search fewer combinations.</div>}
         {alternateArrivalCount > 0 && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{alternateArrivalCount} visible result{alternateArrivalCount === 1 ? "" : "s"} arrive at an airport different from the requested destination {destinationLabel}. These are shown as alternative arrival airports.</div>}
         {flightSource === "mock-fallback" && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No Duffel test results were found for this search. Showing mock fallback results.</div>}
         {flightError && <p className="mb-4 text-sm text-red-600">{flightError}</p>}
