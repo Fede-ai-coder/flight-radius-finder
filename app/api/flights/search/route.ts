@@ -5,6 +5,7 @@ import type { FlightProvider, FlightResult } from "@/lib/flightProviders/types";
 
 const DEFAULT_ADULTS = 1;
 const DEFAULT_MAX_RESULTS = 5;
+const MAX_SEARCH_COMBINATIONS = 30;
 
 type FlightSearchBody = {
   origins?: unknown;
@@ -39,6 +40,12 @@ function getDestinationCodes(body: FlightSearchBody): string[] {
   return typeof body.destination === "string" && body.destination.trim()
     ? [body.destination.trim().toUpperCase()]
     : [];
+}
+
+function limitOriginsForCombinationCap(origins: string[], destinationCount: number): string[] {
+  if (destinationCount <= 0) return [];
+  const maxOrigins = Math.max(1, Math.floor(MAX_SEARCH_COMBINATIONS / destinationCount));
+  return origins.slice(0, maxOrigins);
 }
 
 function getConfiguredProvider(): FlightProvider {
@@ -97,16 +104,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const origins = normalizeStringArray(body.origins);
+  const requestedOrigins = normalizeStringArray(body.origins);
   const destinations = getDestinationCodes(body);
   const date = typeof body.date === "string" ? body.date.trim() : "";
   const adults = typeof body.adults === "number" && body.adults > 0 ? Math.floor(body.adults) : DEFAULT_ADULTS;
   const maxResults = typeof body.maxResults === "number" && body.maxResults > 0 ? Math.floor(body.maxResults) : DEFAULT_MAX_RESULTS;
   const nonStop = typeof body.nonStop === "boolean" ? body.nonStop : undefined;
 
-  if (origins.length === 0 || destinations.length === 0 || !date) {
+  if (requestedOrigins.length === 0 || destinations.length === 0 || !date) {
     return NextResponse.json({ error: "origins, destination/destinations and date are required" }, { status: 400 });
   }
+
+  const origins = limitOriginsForCombinationCap(requestedOrigins, destinations.length);
+  const searchMeta = {
+    requestedOriginCount: requestedOrigins.length,
+    searchedOriginCount: origins.length,
+    destinationCount: destinations.length,
+    requestedCombinations: requestedOrigins.length * destinations.length,
+    searchedCombinations: origins.length * destinations.length,
+    maxCombinations: MAX_SEARCH_COMBINATIONS,
+    wasLimited: origins.length < requestedOrigins.length,
+  };
 
   const provider = getConfiguredProvider();
   const { resultsByOrigin, errors } = await searchOrigins(provider, origins, destinations, date, adults, maxResults, nonStop);
@@ -119,6 +137,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       flights: fallbackFlights,
       originSummaries: buildOriginSummaries(origins, fallback.resultsByOrigin, fallback.errors),
+      searchMeta,
       source: "mock-fallback",
     });
   }
@@ -126,6 +145,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     flights,
     originSummaries: buildOriginSummaries(origins, resultsByOrigin, errors),
+    searchMeta,
     source: provider === duffelFlightProvider ? "duffel" : "mock",
   });
 }
