@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { airportsWithinRadius } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
-import { DESTINATION_OPTIONS, resolveDestinationCode } from "@/lib/destinationSearch";
+import { DESTINATION_OPTIONS, resolveDestinationCode, resolveDestinationCodes } from "@/lib/destinationSearch";
 import type { FlightResult } from "@/lib/flightProviders/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
@@ -44,16 +44,18 @@ export default function HomePage() {
   const destinationSuggestions = useMemo(() => DESTINATION_OPTIONS.map((option) => option.label), []);
   const nearbyAirports = useMemo(() => airportsWithinRadius(AIRPORTS, selectedPoint[0], selectedPoint[1], radiusKm), [selectedPoint, radiusKm]);
   const visibleFlights = useMemo(() => selectedOriginFilter === "all" ? flights : flights.filter((flight) => flight.fromCode === selectedOriginFilter), [flights, selectedOriginFilter]);
+  const destinationCodes = useMemo(() => resolveDestinationCodes(destination), [destination]);
   const destinationCode = resolveDestinationCode(destination);
+  const destinationLabel = destinationCodes.length > 1 ? destinationCodes.join(" / ") : destinationCode;
   const originAirportByCode = useMemo(() => new Map(nearbyAirports.map((airport) => [airport.code, airport])), [nearbyAirports]);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
 
   useEffect(() => {
     const origins = nearbyAirports.map((airport) => airport.code);
-    const destinationCode = resolveDestinationCode(destination);
+    const destinations = resolveDestinationCodes(destination);
 
-    if (!destinationCode || !date || origins.length === 0) {
+    if (destinations.length === 0 || !date || origins.length === 0) {
       setFlights([]); setOriginSummaries([]); setFlightSource(null); return;
     }
 
@@ -64,7 +66,7 @@ export default function HomePage() {
       try {
         const response = await fetch("/api/flights/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origins, destination: destinationCode, date, adults, maxResults, nonStop }),
+          body: JSON.stringify({ origins, destinations, date, adults, maxResults, nonStop }),
         });
         if (!response.ok) throw new Error("Flight search failed");
         const data = (await response.json()) as FlightSearchResponse;
@@ -97,7 +99,7 @@ export default function HomePage() {
 
         <div className="space-y-4 rounded-2xl bg-white p-4 shadow">
           <div><label className="mb-2 block text-sm font-medium">Radius (km)</label><div className="grid grid-cols-2 gap-2">{RADIUS_OPTIONS.map((option) => <button key={option} type="button" onClick={() => setRadiusKm(option)} className={`rounded-lg border px-3 py-2 text-sm ${radiusKm === option ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>{option} km</button>)}</div></div>
-          <div><label className="mb-2 block text-sm font-medium">Destination (IATA or city)</label><input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Santorini, Roma, JTR, FCO" /><datalist id="destination-options">{destinationSuggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}</datalist><p className="mt-1 text-xs text-slate-500">Searching as: {destinationCode || "—"}</p></div>
+          <div><label className="mb-2 block text-sm font-medium">Destination (IATA or city)</label><input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Santorini, Roma, JTR, FCO" /><datalist id="destination-options">{destinationSuggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}</datalist><p className="mt-1 text-xs text-slate-500">Searching as: {destinationLabel || "—"}</p></div>
           <div><label className="mb-2 block text-sm font-medium">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div className="grid grid-cols-2 gap-3"><div><label className="mb-2 block text-sm font-medium">Adults</label><select value={adults} onChange={(e) => setAdults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{ADULT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div><label className="mb-2 block text-sm font-medium">Max results</label><select value={maxResults} onChange={(e) => setMaxResults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{MAX_RESULTS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div></div>
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={nonStop} onChange={(e) => setNonStop(e.target.checked)} className="h-4 w-4" /> Direct only</label>
@@ -108,7 +110,7 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
         <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-xl font-semibold">Flight results</h2><p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider and grouped by origin airport.</p></div><div className="text-right text-sm text-slate-500"><p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>{isLoadingFlights && <p>Loading results...</p>}</div></div>
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.</div>
-        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {nearbyAirports.length} origin airports within {radiusKm} km → {destinationCode || "—"} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {nearbyAirports.length} origin airports within {radiusKm} km → {destinationLabel || "—"} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>
         {flightSource === "mock-fallback" && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No Duffel test results were found for this search. Showing mock fallback results.</div>}
         {flightError && <p className="mb-4 text-sm text-red-600">{flightError}</p>}
 
