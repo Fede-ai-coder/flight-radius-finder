@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { airportsWithinRadius } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
-import { DESTINATION_OPTIONS, resolveDestinationCode, resolveDestinationCodes } from "@/lib/destinationSearch";
+import { DESTINATION_OPTIONS, resolveDestination, resolveDestinationCodes } from "@/lib/destinationSearch";
 import type { FlightResult } from "@/lib/flightProviders/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
@@ -44,9 +44,9 @@ export default function HomePage() {
   const destinationSuggestions = useMemo(() => DESTINATION_OPTIONS.map((option) => option.label), []);
   const nearbyAirports = useMemo(() => airportsWithinRadius(AIRPORTS, selectedPoint[0], selectedPoint[1], radiusKm), [selectedPoint, radiusKm]);
   const visibleFlights = useMemo(() => selectedOriginFilter === "all" ? flights : flights.filter((flight) => flight.fromCode === selectedOriginFilter), [flights, selectedOriginFilter]);
-  const destinationCodes = useMemo(() => resolveDestinationCodes(destination), [destination]);
-  const destinationCode = resolveDestinationCode(destination);
-  const destinationLabel = destinationCodes.length > 1 ? destinationCodes.join(" / ") : destinationCode;
+  const destinationResolution = useMemo(() => resolveDestination(destination), [destination]);
+  const destinationCodes = destinationResolution.codes;
+  const destinationLabel = destinationResolution.label;
   const originAirportByCode = useMemo(() => new Map(nearbyAirports.map((airport) => [airport.code, airport])), [nearbyAirports]);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
@@ -100,7 +100,7 @@ export default function HomePage() {
 
         <div className="space-y-4 rounded-2xl bg-white p-4 shadow">
           <div><label className="mb-2 block text-sm font-medium">Radius (km)</label><div className="grid grid-cols-2 gap-2">{RADIUS_OPTIONS.map((option) => <button key={option} type="button" onClick={() => setRadiusKm(option)} className={`rounded-lg border px-3 py-2 text-sm ${radiusKm === option ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>{option} km</button>)}</div></div>
-          <div><label className="mb-2 block text-sm font-medium">Destination (IATA or city)</label><input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Santorini, Roma, JTR, FCO" /><datalist id="destination-options">{destinationSuggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}</datalist><p className="mt-1 text-xs text-slate-500">Searching as: {destinationLabel || "—"}</p></div>
+          <div><label className="mb-2 block text-sm font-medium">Destination (IATA or city)</label><input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Santorini, Roma, JTR, FCO" /><datalist id="destination-options">{destinationSuggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}</datalist><p className="mt-1 text-xs font-medium text-slate-600">{destinationResolution.description}</p></div>
           <div><label className="mb-2 block text-sm font-medium">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div className="grid grid-cols-2 gap-3"><div><label className="mb-2 block text-sm font-medium">Adults</label><select value={adults} onChange={(e) => setAdults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{ADULT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div><label className="mb-2 block text-sm font-medium">Max results</label><select value={maxResults} onChange={(e) => setMaxResults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{MAX_RESULTS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div></div>
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={nonStop} onChange={(e) => setNonStop(e.target.checked)} className="h-4 w-4" /> Direct only</label>
