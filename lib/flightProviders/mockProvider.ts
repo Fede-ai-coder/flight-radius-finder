@@ -14,6 +14,11 @@ function addHoursToTime(startHour: number, startMinute: number, durationHours: n
   return padTime(arrivalHour, arrivalMinute);
 }
 
+function buildExternalSearchUrl(origin: string, destination: string, date: string) {
+  const query = encodeURIComponent(`${origin} to ${destination} ${date} flight`);
+  return `https://www.google.com/travel/flights?q=${query}`;
+}
+
 export const mockFlightProvider: FlightProvider = {
   async searchFlights({ origin, destination, date, maxResults, nonStop }: FlightSearchRequest): Promise<FlightResult[]> {
     const originCode = origin.trim().toUpperCase();
@@ -46,6 +51,7 @@ export const mockFlightProvider: FlightProvider = {
           stops,
           price,
           currency: "USD",
+          bookingUrl: buildExternalSearchUrl(originCode, destinationCode, date),
           source: "mock",
         } satisfies FlightResult;
       })
