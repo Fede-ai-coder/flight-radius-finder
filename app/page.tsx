@@ -20,7 +20,7 @@ type DepartureSearchMode = "radius" | "polygon";
 type ArrivalSearchMode = "input" | "polygon";
 type MapEditArea = "departure" | "arrival";
 type OriginSummary = { origin: string; resultCount: number; cheapestPrice: number | null; currency: string | null; status: "found" | "empty" | "error" };
-type SearchMeta = { requestedOriginCount: number; searchedOriginCount: number; destinationCount: number; requestedCombinations: number; searchedCombinations: number; maxCombinations: number; wasLimited: boolean };
+type SearchMeta = { requestedOriginCount: number; searchedOriginCount: number; destinationCount: number; requestedDateCount?: number; searchedDateCount?: number; requestedCombinations: number; searchedCombinations: number; maxCombinations: number; maxDateRangeDays?: number; wasDateRangeLimited?: boolean; wasLimited: boolean };
 type FlightSearchResponse = { flights?: FlightResult[]; source?: string; originSummaries?: OriginSummary[]; searchMeta?: SearchMeta };
 
 function getSourceLabel(source: string | null) {
@@ -34,7 +34,12 @@ function getArrivalRadiusLabel(radiusKm: number) {
   return radiusKm === 0 ? "Exact only" : `${radiusKm} km`;
 }
 
+function getDateRangeLabel(dateFrom: string, dateTo: string) {
+  return dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`;
+}
+
 export default function HomePage() {
+  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const [selectedPoint, setSelectedPoint] = useState<Coordinate>([40.7128, -74.006]);
   const [departureQuery, setDepartureQuery] = useState("New York");
   const [mapEditArea, setMapEditArea] = useState<MapEditArea>("departure");
@@ -45,7 +50,8 @@ export default function HomePage() {
   const [radiusKm, setRadiusKm] = useState(100);
   const [destination, setDestination] = useState("LAX");
   const [arrivalRadiusKm, setArrivalRadiusKm] = useState(0);
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [adults, setAdults] = useState(1);
   const [maxResults, setMaxResults] = useState(3);
   const [nonStop, setNonStop] = useState(false);
@@ -72,6 +78,9 @@ export default function HomePage() {
   const airportByCode = useMemo(() => new Map(AIRPORTS.map((airport) => [airport.code, airport])), []);
   const foundOriginCount = originSummaries.filter((summary) => summary.status === "found").length;
   const cheapestFlight = flights[0];
+  const normalizedDateTo = dateTo || date;
+  const isDateRangeValid = Boolean(date) && Boolean(normalizedDateTo) && normalizedDateTo >= date;
+  const dateRangeLabel = getDateRangeLabel(date, normalizedDateTo);
   const highlightedAirports = useMemo(() => originSummaries.filter((summary) => summary.status === "found").map((summary) => { const airport = originAirportByCode.get(summary.origin); return airport ? { ...airport, resultCount: summary.resultCount, cheapestPrice: summary.cheapestPrice, currency: summary.currency } : null; }).filter((airport): airport is NonNullable<typeof airport> => Boolean(airport)), [originSummaries, originAirportByCode]);
   const highlightedArrivalAirports = useMemo(() => {
     const summaryByArrival = new Map<string, { resultCount: number; cheapestPrice: number | null; currency: string | null }>();
@@ -93,9 +102,9 @@ export default function HomePage() {
   const alternateArrivalCount = visibleFlights.filter((flight) => destinationCodes.length > 0 && !destinationCodes.includes(flight.to)).length;
   const departureAreaLabel = departureSearchMode === "polygon" ? `drawn area (${departurePolygon.length} point${departurePolygon.length === 1 ? "" : "s"})` : `${radiusKm} km`;
   const arrivalAreaLabel = arrivalSearchMode === "polygon" ? `drawn area (${arrivalPolygon.length} point${arrivalPolygon.length === 1 ? "" : "s"})` : `${getArrivalRadiusLabel(arrivalRadiusKm)} arrival`;
-  const currentSearchSignature = useMemo(() => JSON.stringify({ departureSearchMode, departurePolygon, origins: nearbyOriginCodes, arrivalSearchMode, arrivalPolygon, destinations: destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm }), [departureSearchMode, departurePolygon, nearbyOriginCodes, arrivalSearchMode, arrivalPolygon, destinationCodes, date, adults, maxResults, nonStop, arrivalRadiusKm]);
+  const currentSearchSignature = useMemo(() => JSON.stringify({ departureSearchMode, departurePolygon, origins: nearbyOriginCodes, arrivalSearchMode, arrivalPolygon, destinations: destinationCodes, dateFrom: date, dateTo: normalizedDateTo, adults, maxResults, nonStop, arrivalRadiusKm }), [departureSearchMode, departurePolygon, nearbyOriginCodes, arrivalSearchMode, arrivalPolygon, destinationCodes, date, normalizedDateTo, adults, maxResults, nonStop, arrivalRadiusKm]);
   const hasPendingSearchChanges = hasSearched && lastSearchSignature !== currentSearchSignature;
-  const canSearch = nearbyOriginCodes.length > 0 && destinationCodes.length > 0 && Boolean(date) && !isLoadingFlights;
+  const canSearch = nearbyOriginCodes.length > 0 && destinationCodes.length > 0 && isDateRangeValid && !isLoadingFlights;
   const activePolygon = mapEditArea === "arrival" ? arrivalPolygon : departurePolygon;
   const activeMapMode = mapEditArea === "arrival" ? "polygon" : departureSearchMode;
   const activePolygonColor = mapEditArea === "arrival" ? ARRIVAL_COLOR : DEPARTURE_COLOR;
@@ -131,7 +140,7 @@ export default function HomePage() {
       const response = await fetch("/api/flights/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origins: nearbyOriginCodes, destinations: destinationCodes, date, adults, maxResults, nonStop }),
+        body: JSON.stringify({ origins: nearbyOriginCodes, destinations: destinationCodes, dateFrom: date, dateTo: normalizedDateTo, adults, maxResults, nonStop }),
       });
       if (!response.ok) throw new Error("Flight search failed");
       const data = (await response.json()) as FlightSearchResponse;
@@ -188,7 +197,9 @@ export default function HomePage() {
           {arrivalSearchMode === "input" && <div><label className="mb-2 block text-sm font-medium">Destination(s)</label><input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Santorini, Rome; Milan, LAX" /><datalist id="destination-options">{destinationSuggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}</datalist><p className="mt-1 text-xs font-medium text-slate-600">{destinationResolution.description}</p><p className="mt-1 text-xs text-slate-500">Use commas or semicolons for multiple destinations.</p></div>}
           {arrivalSearchMode === "input" && <div><label className="mb-2 block text-sm font-medium">Arrival radius</label><div className="grid grid-cols-2 gap-2">{ARRIVAL_RADIUS_OPTIONS.map((option) => <button key={option} type="button" onClick={() => setArrivalRadiusKm(option)} className={`rounded-lg border px-3 py-2 text-sm ${arrivalRadiusKm === option ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>{getArrivalRadiusLabel(option)}</button>)}</div><p className="mt-1 text-xs text-slate-500">Expand destination airports around the selected arrival city/airport.</p></div>}
           {arrivalSearchMode === "polygon" && <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold">Arrival draw mode:</span> {arrivalPolygon.length < 3 ? `add ${3 - arrivalPolygon.length} more point${3 - arrivalPolygon.length === 1 ? "" : "s"}.` : `${arrivalPolygonAirports.length} destination airports inside: ${arrivalPolygonAirports.map((airport) => airport.code).join(", ") || "none"}`}</div>}
-          <div><label className="mb-2 block text-sm font-medium">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+          <div className="grid grid-cols-2 gap-3"><div><label className="mb-2 block text-sm font-medium">Departure from</label><input type="date" value={date} onChange={(e) => { setDate(e.target.value); if (!dateTo || dateTo < e.target.value) setDateTo(e.target.value); }} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div><div><label className="mb-2 block text-sm font-medium">Departure to</label><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div></div>
+          {!isDateRangeValid && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">Departure to must be the same as or after Departure from.</p>}
+          <p className="text-xs text-slate-500">Date range searched: {dateRangeLabel}. Maximum 14 departure days per search.</p>
           <div className="grid grid-cols-2 gap-3"><div><label className="mb-2 block text-sm font-medium">Adults</label><select value={adults} onChange={(e) => setAdults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{ADULT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div><label className="mb-2 block text-sm font-medium">Max results</label><select value={maxResults} onChange={(e) => setMaxResults(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2">{MAX_RESULTS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div></div>
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={nonStop} onChange={(e) => setNonStop(e.target.checked)} className="h-4 w-4" /> Direct only</label>
           <button type="button" onClick={handleSearchFlights} disabled={!canSearch} className={`w-full rounded-lg px-4 py-3 text-sm font-semibold ${canSearch ? "bg-blue-600 text-white hover:bg-blue-700" : "cursor-not-allowed bg-slate-200 text-slate-500"}`}>{isLoadingFlights ? "Searching flights..." : "Search flights"}</button>
@@ -200,10 +211,10 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
         <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-xl font-semibold">Flight results</h2><p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider and grouped by origin airport.</p></div><div className="text-right text-sm text-slate-500"><p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>{isLoadingFlights && <p>Loading results...</p>}</div></div>
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.</div>
-        {!hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">Choose your departure area, arrival area or destinations and date, then click <span className="font-semibold">Search flights</span>.</div>}
+        {!hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">Choose your departure area, arrival area or destinations and departure date range, then click <span className="font-semibold">Search flights</span>.</div>}
         {hasPendingSearchChanges && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Search settings changed. Click <span className="font-semibold">Search flights</span> to refresh the results.</div>}
-        {hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {originSummaries.length || nearbyAirports.length} origin airports in {departureAreaLabel} departure area → {destinationLabel || "—"} ({arrivalAreaLabel}) · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>}
-        {searchMeta?.wasLimited && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="font-semibold">Search limited:</span> checked {searchMeta.searchedCombinations} of {searchMeta.requestedCombinations} origin-destination combinations to protect provider limits. Try drawing smaller areas or choosing more specific destination airports.</div>}
+        {hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {originSummaries.length || nearbyAirports.length} origin airports in {departureAreaLabel} departure area → {destinationLabel || "—"} ({arrivalAreaLabel}) · dates {dateRangeLabel}{searchMeta?.searchedDateCount ? ` (${searchMeta.searchedDateCount} day${searchMeta.searchedDateCount === 1 ? "" : "s"})` : ""} · {foundOriginCount} airports with results · {flights.length} total results{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>}
+        {searchMeta?.wasLimited && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="font-semibold">Search limited:</span> checked {searchMeta.searchedCombinations} of {searchMeta.requestedCombinations} origin-destination-date combinations to protect provider limits. {searchMeta.wasDateRangeLimited ? `Date range was limited to ${searchMeta.maxDateRangeDays} days. ` : ""}Try drawing smaller areas, choosing more specific destination airports, or narrowing the date range.</div>}
         {alternateArrivalCount > 0 && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{alternateArrivalCount} visible result{alternateArrivalCount === 1 ? "" : "s"} arrive at an airport different from the requested destination area {destinationLabel}. These are shown as alternative arrival airports.</div>}
         {flightSource === "mock-fallback" && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No Duffel test results were found for this search. Showing mock fallback results.</div>}
         {flightError && <p className="mb-4 text-sm text-red-600">{flightError}</p>}
