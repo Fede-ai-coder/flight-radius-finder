@@ -13,6 +13,8 @@ const RADIUS_OPTIONS = [50, 100, 200, 300];
 const ARRIVAL_RADIUS_OPTIONS = [0, 50, 100, 200];
 const ADULT_OPTIONS = [1, 2, 3, 4];
 const MAX_RESULTS_OPTIONS = [3, 5, 10];
+const DEPARTURE_COLOR = "#2563eb";
+const ARRIVAL_COLOR = "#db2777";
 
 type DepartureSearchMode = "radius" | "polygon";
 type ArrivalSearchMode = "input" | "polygon";
@@ -78,6 +80,13 @@ export default function HomePage() {
   const canSearch = nearbyOriginCodes.length > 0 && destinationCodes.length > 0 && Boolean(date) && !isLoadingFlights;
   const activePolygon = mapEditArea === "arrival" ? arrivalPolygon : departurePolygon;
   const activeMapMode = mapEditArea === "arrival" ? "polygon" : departureSearchMode;
+  const activePolygonColor = mapEditArea === "arrival" ? ARRIVAL_COLOR : DEPARTURE_COLOR;
+  const secondaryPolygons = useMemo(() => {
+    const polygons = [];
+    if (mapEditArea !== "departure" && departureSearchMode === "polygon" && departurePolygon.length >= 2) polygons.push({ points: departurePolygon, color: DEPARTURE_COLOR, fillOpacity: 0.08 });
+    if (mapEditArea !== "arrival" && arrivalSearchMode === "polygon" && arrivalPolygon.length >= 2) polygons.push({ points: arrivalPolygon, color: ARRIVAL_COLOR, fillOpacity: 0.08 });
+    return polygons;
+  }, [mapEditArea, departureSearchMode, departurePolygon, arrivalSearchMode, arrivalPolygon]);
 
   function updateActivePolygon(updater: (current: Coordinate[]) => Coordinate[]) {
     if (mapEditArea === "arrival") setArrivalPolygon(updater);
@@ -146,8 +155,9 @@ export default function HomePage() {
             {activeMapMode === "polygon" && <button type="button" onClick={() => updateActivePolygon((current) => current.slice(0, -1))} disabled={activePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Undo point</button>}
             {activeMapMode === "polygon" && <button type="button" onClick={() => updateActivePolygon(() => [])} disabled={activePolygon.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Clear area</button>}
           </div>
-          {activeMapMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Editing {mapEditArea} area: click on the map to add at least 3 points. Drag blue points to reshape the area, or drag the light-blue line handles to pull out a new edge.</p>}
-          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={activeMapMode} polygonPoints={activePolygon} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} onInsertPolygonPoint={handleInsertPolygonPoint} /></div>
+          <div className="mb-3 flex flex-wrap gap-3 text-xs font-medium text-slate-600"><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" /> departure area</span><span><span className="inline-block h-2.5 w-2.5 rounded-full bg-pink-600" /> arrival area</span></div>
+          {activeMapMode === "polygon" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">Editing {mapEditArea} area: click on the map to add at least 3 points. Drag colored points to reshape the active area, or drag the light-blue line handles to pull out a new edge.</p>}
+          <div className="h-[420px] overflow-hidden rounded-xl"><MapPicker center={selectedPoint} radiusKm={radiusKm} mode={activeMapMode} polygonPoints={activePolygon} secondaryPolygons={secondaryPolygons} activePolygonColor={activePolygonColor} highlightedAirports={highlightedAirports} onSelect={setSelectedPoint} onAddPolygonPoint={handleAddPolygonPoint} onMovePolygonPoint={handleMovePolygonPoint} onInsertPolygonPoint={handleInsertPolygonPoint} /></div>
           <p className="mt-3 text-sm text-slate-600">Departure: {departureAreaLabel} · Arrival: {arrivalSearchMode === "polygon" ? `${arrivalPolygonAirports.length} airports in ${arrivalAreaLabel}` : arrivalAreaLabel}</p>
           {highlightedAirports.length > 0 && <p className="mt-1 text-sm font-medium text-green-700">Highlighted result airports: {highlightedAirports.map((airport) => airport.code).join(", ")}</p>}
         </div>
