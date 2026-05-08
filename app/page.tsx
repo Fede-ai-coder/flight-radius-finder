@@ -98,6 +98,7 @@ function SortableFlightTable({ title, flights, destinationCodes, sortKey, sortDi
               <th className="p-2">{header("Duration", "duration")}</th>
               <th className="p-2">{header("Stops", "stops")}</th>
               <th className="p-2">{header("Price", "price")}</th>
+              <th className="p-2">Book</th>
             </tr>
           </thead>
           <tbody>
@@ -114,10 +115,24 @@ function SortableFlightTable({ title, flights, destinationCodes, sortKey, sortDi
                   <td className="p-2">{flight.duration}</td>
                   <td className="p-2">{flight.stops}</td>
                   <td className="p-2">{flight.currency} {flight.price}</td>
+                  <td className="p-2">
+                    {flight.bookingUrl ? (
+                      <a
+                        href={flight.bookingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg border border-blue-600 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        Book elsewhere
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
-            {sortedFlights.length === 0 && <tr><td colSpan={9} className="p-3 text-slate-500">No results.</td></tr>}
+            {sortedFlights.length === 0 && <tr><td colSpan={10} className="p-3 text-slate-500">No results.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -322,7 +337,7 @@ export default function HomePage() {
 
       <section className="mt-6 rounded-2xl bg-white p-4 shadow">
         <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-xl font-semibold">Flight results</h2><p className="mb-4 text-sm text-slate-500">Results are loaded through the configured flight provider and grouped by origin airport.</p></div><div className="text-right text-sm text-slate-500"><p>Source: <span className="font-semibold text-slate-700">{getSourceLabel(flightSource)}</span></p>{isLoadingFlights && <p>Loading results...</p>}</div></div>
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. No live bookings or payments are created.</div>
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Test mode: flight results may come from Duffel test API or mock fallback. Search only — bookings and payments are completed externally. No live bookings or payments are created.</div>
         {!hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">Choose your areas, trip type and date range, then click <span className="font-semibold">Search flights</span>.</div>}
         {hasPendingSearchChanges && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Search settings changed. Click <span className="font-semibold">Search flights</span> to refresh the results.</div>}
         {hasSearched && <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-semibold text-slate-900">Search:</span> {tripType === "roundTrip" ? "Round trip" : "One-way"} · {originSummaries.length || nearbyAirports.length} origin airports in {departureAreaLabel} departure area → {destinationLabel || "—"} ({arrivalAreaLabel}) · outbound {dateRangeLabel}{searchMeta?.searchedDateCount ? ` (${searchMeta.searchedDateCount} day${searchMeta.searchedDateCount === 1 ? "" : "s"})` : ""}{tripType === "roundTrip" ? ` · return ${returnDateRangeLabel}${returnSearchMeta?.searchedDateCount ? ` (${returnSearchMeta.searchedDateCount} day${returnSearchMeta.searchedDateCount === 1 ? "" : "s"})` : ""}` : ""} · {resultOriginCount} airports with outbound results · {flights.length} outbound results{tripType === "roundTrip" ? ` · ${returnFlights.length} return results` : ""}{cheapestFlight && <> · cheapest {cheapestFlight.currency} {cheapestFlight.price} from {cheapestFlight.fromCode}</>}</div>}
