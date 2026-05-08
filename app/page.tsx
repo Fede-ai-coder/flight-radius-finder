@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AIRPORTS } from "@/data/airports";
 import { airportsWithinRadius } from "@/lib/geo";
 import { DEPARTURE_OPTIONS, findDepartureLocation } from "@/lib/departureSearch";
+import { DESTINATION_OPTIONS, resolveDestinationCode } from "@/lib/destinationSearch";
 import type { FlightResult } from "@/lib/flightProviders/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false });
@@ -39,6 +40,11 @@ export default function HomePage() {
     [],
   );
 
+  const destinationSuggestions = useMemo(
+    () => DESTINATION_OPTIONS.map((option) => option.label),
+    [],
+  );
+
   const nearbyAirports = useMemo(
     () => airportsWithinRadius(AIRPORTS, selectedPoint[0], selectedPoint[1], radiusKm),
     [selectedPoint, radiusKm],
@@ -46,8 +52,9 @@ export default function HomePage() {
 
   useEffect(() => {
     const origins = nearbyAirports.map((airport) => airport.code);
+    const destinationCode = resolveDestinationCode(destination);
 
-    if (!destination.trim() || !date || origins.length === 0) {
+    if (!destinationCode || !date || origins.length === 0) {
       setFlights([]);
       setFlightSource(null);
       return;
@@ -65,7 +72,7 @@ export default function HomePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             origins,
-            destination: destination.trim(),
+            destination: destinationCode,
             date,
             adults: 1,
             maxResults: 3,
@@ -154,11 +161,20 @@ export default function HomePage() {
           <div>
             <label className="mb-2 block text-sm font-medium">Destination (IATA or city)</label>
             <input
+              list="destination-options"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="e.g. LAX"
+              placeholder="e.g. Santorini, Roma, JTR, FCO"
             />
+            <datalist id="destination-options">
+              {destinationSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-xs text-slate-500">
+              Searching as: {resolveDestinationCode(destination) || "—"}
+            </p>
           </div>
 
           <div>
